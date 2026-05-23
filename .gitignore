@@ -1,0 +1,30 @@
+# Data
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/fixtures/*
+!data/fixtures/.gitkeep
+
+# Models
+models/*
+!models/.gitkeep
+
+# Metrics
+metrics/*
+!metrics/.gitkeep
+
+# Environment
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store

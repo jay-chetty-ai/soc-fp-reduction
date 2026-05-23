@@ -1,0 +1,72 @@
+# SOC False Positive Reduction POC - Configuration
+
+# Data paths
+data:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  fixtures_dir: data/fixtures
+  fixture_size: 10000
+
+# Stage 1: ML Classifier
+stage1:
+  model_type: lightgbm  # lightgbm or xgboost
+  is_unbalance: true
+  n_estimators: 500
+  early_stopping_rounds: 50
+  cv_folds: 5
+  model_artifact_path: models/stage1_model.pkl
+
+# Conformal Prediction
+conformal:
+  alpha: 0.05
+  auto_fp_threshold: 0.05
+  auto_tp_threshold: 0.85
+
+# Stage 2: LLM Adjudication
+stage2:
+  model: claude-sonnet-4-20250514
+  max_tokens: 2048
+  temperature: 0.1
+  timeout_seconds: 10
+
+# RAG
+rag:
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  embedding_dim: 384
+  top_k: 5
+  faiss_index_path: models/faiss_index.bin
+  device: auto  # auto = CUDA if available, else CPU
+
+# GPU
+gpu:
+  available: true
+  model: NVIDIA RTX 2070 SUPER
+  vram_gb: 8
+  use_for:
+    - embeddings  # 10-20x speedup over CPU for MiniLM-L6-v2
+    # LightGBM, SHAP, XGBoost are CPU-only
+    # 8GB VRAM insufficient for local LLM inference
+
+# Adversarial Validation
+adversarial:
+  model: claude-sonnet-4-20250514
+  max_tokens: 2048
+  temperature: 0.3
+
+# Tripwire
+tripwire:
+  lookback_days: 7
+
+# Evaluation targets
+targets:
+  pr_auc: 0.85
+  auto_fp_fn_rate: 0.01
+  tp_recall: 0.95
+  volume_reduction: 0.70
+  stage2_latency_seconds: 10
+  stage1_latency_ms: 500
+
+# Logging
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
