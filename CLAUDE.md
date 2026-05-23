@@ -228,7 +228,8 @@ soc-fp-reduction/
 │   ├── conftest.py            # Shared fixtures (10K subset, mock API)
 │   ├── test_epic1_data.py
 │   ├── test_epic2_llm.py
-│   └── test_epic3_ui.py
+│   ├── test_epic3_ui.py
+│   └── test_security.py
 ├── config.yaml
 ├── requirements.txt
 ├── CLAUDE.md                  # Project conventions for Claude Code
@@ -285,6 +286,65 @@ Use this document as the authoritative reference for all design decisions. Do no
 - Follow anti-AI writing style: avoid words like “delve”, “crucial”, “comprehensive”, “robust”, “streamline”, “leverage”, “cutting-edge”, “paradigm”, “synergy”, “holistic”, “transformative”. Write plainly and directly.
 - No promotional language. State what the system does, not how impressive it is.
 - Technical documents should be precise and concrete, not aspirational.
+
+-----
+
+## Security Requirements (Secure by Design)
+
+A full threat model is in `docs/threat_model.md`. The following controls are **must-have** and must be implemented as part of the sprint work, not bolted on after.
+
+### Must-Have Controls (Implement During Sprints)
+
+1. **Prompt Injection Mitigation (S1)**: All alert data is untrusted input. Sanitize before prompt assembly. Use XML delimiters to separate data from instructions. Validate LLM output schema strictly. Never auto-close on malformed LLM response. Implementation: `src/llm/sanitizer.py`, `src/llm/validators.py`.
+
+2. **Secrets Management (S2)**: Never log, print, or commit API keys. Redaction filter on all logging handlers. Fail fast on startup if `.env` is misconfigured. Implementation: `src/utils/secrets.py`.
+
+3. **Audit Logging (S3)**: Every pipeline decision gets a structured JSON audit entry: timestamp, alert_id, stage, verdict, confidence, model_version, prompt_hash, response_hash. Append-only log with SHA-256 hash chain. Analyst overrides logged with full context. Implementation: `src/utils/audit.py`.
+
+4. **Model Artifact Integrity (S4)**: SHA-256 hash of model at save time, verify at load time. Log model hash in every prediction. Implementation: `src/models/integrity.py`.
+
+5. **LLM Output Validation (S5)**: Strict Pydantic validation on every LLM response. Reject out-of-range values. Fallback to "needs_review" on any parse failure. Implementation: `src/llm/validators.py`.
+
+6. **Data Minimization for API (S6)**: Field allowlist before sending to Claude API. Redact sensitive fields. Log what was sent (redacted) in audit trail. Implementation: `src/llm/redactor.py`.
+
+7. **Rate Limiting and Cost Controls (S7)**: Max API calls per hour/day. Circuit breaker if uncertain band exceeds threshold. Exponential backoff with jitter. Implementation: `src/llm/rate_limiter.py`.
+
+8. **Dashboard Authentication (S8)**: Streamlit authenticator with session timeout. Viewer vs analyst roles. Implementation: update `src/ui/dashboard.py`.
+
+### Roadmap Controls (Post-POC)
+
+- S9: Dependency pinning and vulnerability scanning
+- S10: RAG/FAISS index integrity verification
+- S11: Model evasion detection (ART integration)
+- S12: PII anonymization via NER before API calls
+- S13: Verdict anomaly detection (distribution drift monitoring)
+- S14: Cryptographic model signing
+- S15: Network segmentation and enterprise SSO for UI
+
+### Security Modules (new files to create)
+
+```
+src/utils/
+├── __init__.py
+├── secrets.py              # S2
+└── audit.py                # S3
+src/llm/
+├── sanitizer.py            # S1
+├── validators.py           # S5
+├── redactor.py             # S6
+└── rate_limiter.py         # S7
+src/models/
+└── integrity.py            # S4
+```
+
+### Security Testing Requirements
+
+- Unit tests for sanitizer: verify known injection patterns are neutralized
+- Unit tests for validators: verify malformed LLM responses are rejected
+- Unit tests for redactor: verify sensitive fields are stripped
+- Unit tests for audit: verify hash chain integrity
+- Integration test: end-to-end pipeline produces complete audit trail
+- Add security test module: `tests/test_security.py`
 
 -----
 
