@@ -6,10 +6,15 @@ data/processed/*
 data/fixtures/*
 !data/fixtures/.gitkeep
 !data/fixtures/fixture_10k.csv
+!data/fixtures/fixture_10k_in_distribution.csv
 
 # Models
 models/*
 !models/.gitkeep
+
+# Pipeline run outputs (generated artifacts, not source)
+results/*
+!results/.gitkeep
 
 # Metrics
 metrics/*

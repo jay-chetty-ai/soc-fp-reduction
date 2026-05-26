@@ -1,0 +1,8 @@
+What LangGraph buys you for future LLM enhancements:
+  - Tool use: Stage 2 agent queries threat intel feeds, CMDB, or a CVE database mid-reasoning
+  - Looping: agent requests clarification or runs a sub-query before issuing a verdict
+  - Multiple specialized sub-agents: one for network traffic pattern analysis, one for threat intel correlation (the CORTEX multi-agent
+  pattern from the research doc, which got +0.15 F1 over single-LLM)
+  - Persistent state across a session of related alerts
+  - Conditional routing based on intermediate agent outputs (e.g., "if TI lookup returns a hit, skip the adversarial call")
+
