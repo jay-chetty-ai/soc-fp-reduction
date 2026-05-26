@@ -269,6 +269,68 @@ The dashboard reads the results parquet and has both `true_label` and `final_ver
 
 ---
 
+## Why the evaluation numbers look the way they do: distribution shift
+
+This section explains why the recall metric on the full test fixture is low, why that is not a bug, and how to read the numbers honestly.
+
+### The temporal split and what it means
+
+The model is trained on CICIDS2017 days 1-4 (Monday through Thursday). Day 5 (Friday) is the hold-out test set. This is intentional: temporal hold-out simulates real-world deployment, where the model sees traffic from a future time window it was never trained on.
+
+The attack types present in the training data (Mon-Thu) are:
+
+- DoS Hulk, DoS GoldenEye, DoS slowloris, DoS Slowhttptest
+- FTP-Patator, SSH-Patator
+- Web Attack (Brute Force, XSS, SQL Injection)
+- Infiltration, Heartbleed
+
+Friday introduces three attack families that do not appear anywhere in the training data:
+
+- **DDoS** (~452 rows in the 10K fixture)
+- **PortScan** (~562 rows in the 10K fixture)
+- **Bot** (~7 rows in the 10K fixture)
+
+The LightGBM classifier has never seen a DDoS, PortScan, or Bot flow during training. When it encounters one at inference time, it scores it as benign with high confidence -- the flow features do not match the attack patterns it learned. Those alerts fall into the `auto_fp` band and are closed as false positives. From the pipeline's point of view, it is making the correct decision given its training data. From an evaluation perspective, those closures are false negatives.
+
+### Why the 10K fixture is a real-world test, not a curated one
+
+`fixture_10k.csv` is a stratified sample drawn from the full CICIDS2017 dataset, which spans all five days. "Stratified" means the sample preserves the class proportions of the original dataset, so it includes all attack types in proportion to their occurrence -- including the Friday-only families.
+
+This is intentional. The 10K fixture is not a cherry-picked set of alerts the model was trained to handle. It is a representative slice of what a production system would see if deployed on the full week of traffic. The Friday attack types in the fixture are there because Friday attacks exist in real traffic.
+
+The consequence: recall on the full fixture is suppressed by the three unseen attack families. On a 50-alert sample, 3 of the 3 errors were all Friday attack types in the auto_fp band. The model achieved 100% precision (no false positives sent to analysts) and 70% recall on that sample. The 30% miss rate is entirely explained by DDoS/PortScan/Bot rows the model never trained on.
+
+This is not a failure mode to hide. It is the honest result of a Mon-Thu-trained model evaluated on a Mon-Fri dataset. A production system would show the same gap until Friday attack types are added to training.
+
+### Three options for addressing distribution shift
+
+**Option 1: Retrain with Friday data included.** Change the temporal split -- for example, train on Mon-Wed, hold out Thu-Fri. All five attack-type families appear in training. This is the correct fix for a production deployment where the model needs to handle any attack type the dataset covers. The trade-off is losing the strict "never seen the test day" temporal separation.
+
+**Option 2: Evaluate on in-distribution alerts only.** Filter the fixture to exclude rows where Label is in `{'DDoS', 'PortScan', 'Bot'}` and evaluate on the remaining rows. This measures what the model can actually do on attack types it was trained on. Recall on this filtered fixture is substantially higher because every false negative is a genuine model error, not a distribution shift artifact. This fixture is appropriate for measuring the model's ceiling performance.
+
+**Option 3: Report both numbers and explain the gap.** Run evaluation on the full fixture (real-world conditions) and on the filtered fixture (in-distribution conditions) and report both. The difference between the two recall values is the cost of the distribution shift -- a concrete, measurable number rather than a vague disclaimer. This is the most informative approach for a portfolio or a Principal Engineer review.
+
+### What each fixture tells you
+
+| Fixture | Attack types included | What recall measures |
+|---|---|---|
+| `fixture_10k.csv` (full) | All 5 days, including DDoS/PortScan/Bot | Real-world performance including known distribution shift |
+| `fixture_10k_in_distribution.csv` (filtered) | Mon-Thu attack types only | Model performance on attack families it was trained to handle |
+
+The full fixture is more honest about what happens in production. The filtered fixture is more useful for evaluating model quality in isolation from the data-coverage problem. Neither number is wrong -- they answer different questions.
+
+### What would actually fix recall
+
+The root cause is that the training set does not cover Friday attack types. The fix is one of:
+
+1. Include Friday attack data in training (retrain with different temporal split).
+2. Supplement the training set with flows from other datasets that include DDoS/PortScan/Bot signatures (e.g., UNSW-NB15, which covers Bot and port scan traffic).
+3. Add a fallback rule layer that flags high-volume, low-entropy flows (DDoS) or systematic sweep patterns (PortScan) independent of the ML score.
+
+None of these are bugs to fix in the pipeline code. The pipeline is working as designed. The gap between PR-AUC on in-distribution data and recall on the full fixture is a data coverage problem, and the correct response is to expand training coverage, not to adjust model thresholds or filter the evaluation.
+
+---
+
 ## What the system does NOT do
 
 - **It does not learn.** Each pipeline run is stateless. The LLM does not update based on analyst feedback. The RAG index does not grow automatically. Both require manual retraining or re-indexing to incorporate new data.
