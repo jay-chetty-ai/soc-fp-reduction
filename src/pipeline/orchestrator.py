@@ -92,6 +92,7 @@ def run_batch(
     )
     from src.llm.embeddings import alert_to_text, embed_alerts
     from src.llm.retrieval import retrieve_similar
+    from src.llm.sanitizer import sanitize_value
 
     feat_cols = get_feature_columns(df)
     X = df[feat_cols]
@@ -217,7 +218,7 @@ def run_batch(
             shap_summary = "\n".join(
                 f"{e['feature']}: {e['shap_value']:.4f}" for e in top5
             )
-            adv_prompt = build_adversarial_prompt(stage2, alert_text, shap_summary)
+            adv_prompt = build_adversarial_prompt(stage2, sanitize_value(alert_text), shap_summary)
             adv = challenge(
                 components.anthropic_client,
                 get_adversarial_system_prompt(),

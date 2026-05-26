@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 from pydantic import ValidationError
 
+from src.llm.redactor import redact_alert
 from src.llm.sanitizer import sanitize_alert_dict
 from src.llm.validators import Stage2Verdict
 
@@ -47,7 +48,11 @@ def build_prompt(
     else:
         raw_fields = dict(alert)
 
-    sanitized = sanitize_alert_dict(raw_fields)
+    # S6: strip to allowlisted network-feature fields before sanitizing.
+    # This prevents IP addresses and internal host identifiers from crossing
+    # the API boundary.
+    redacted = redact_alert(raw_fields)
+    sanitized = sanitize_alert_dict(redacted)
     alert_block = "\n".join(f"  {k}: {v}" for k, v in sanitized.items())
 
     shap_lines = "\n".join(
