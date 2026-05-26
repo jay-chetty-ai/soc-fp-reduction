@@ -12,14 +12,16 @@ data/fixtures/*
 models/*
 !models/.gitkeep
 
-# Pipeline run outputs (generated artifacts, not source)
+# Pipeline run outputs
 results/*
 !results/.gitkeep
 !results/*.md
+!results/*.parquet
 
 # Metrics
 metrics/*
 !metrics/.gitkeep
+!metrics/*.json
 
 # Environment
 .env
