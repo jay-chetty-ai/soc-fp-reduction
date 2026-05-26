@@ -29,7 +29,7 @@ flowchart LR
 
 **Stage 2** takes the uncertain band and reasons over it using Claude with RAG over historical alert dispositions. It outputs a structured verdict with natural language explanation.
 
-**Adversarial validation** runs a second LLM call (inspired by Cloudflare's Project Glasswing) that attempts to disprove Stage 2 findings before finalizing.
+**Adversarial validation** runs a second LLM call that attempts to disprove Stage 2 findings before finalizing.
 
 **Analyst UI** is a Streamlit dashboard showing alert details, SHAP explanations, LLM rationale, similar historical alerts, and feedback capture.
 
