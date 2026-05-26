@@ -1,8 +1,17 @@
 # Sprint Backlog: SOC False Positive Reduction POC
 
-**Version**: 1.0  
+**Version**: 2.0  
 **Date**: 2026-05-25  
-**Status**: Draft - Awaiting Approval
+**Status**: Approved and in execution
+
+## Status Summary
+
+| Epic | Description | Status |
+|------|-------------|--------|
+| 1 | Data Ingestion and Stage 1 Classifier | **Complete** (103 tests passing) |
+| 2 | Conformal Calibration and Stage 2 LLM | **Complete** (103 tests passing) |
+| Post-Epic-2 | Production hardening (real scripts, config cleanup) | **Complete** |
+| 3 | Analyst UI and Demo | **In Progress** (Story 3.1 next) |
 
 ---
 
@@ -16,7 +25,7 @@
 
 ---
 
-## Epic 1: Data Ingestion and Stage 1 Classifier
+## Epic 1: Data Ingestion and Stage 1 Classifier -- **COMPLETE**
 
 ---
 
@@ -90,7 +99,7 @@
 
 ---
 
-## Epic 2: Conformal Calibration and Stage 2 LLM Adjudication
+## Epic 2: Conformal Calibration and Stage 2 LLM Adjudication -- **COMPLETE**
 
 ---
 
@@ -102,7 +111,7 @@
 
 | # | Task | File(s) | Notes |
 |---|------|---------|-------|
-| 2.1.1 | Implement `conformal.py` | `src/models/conformal.py` | `fit_conformal(model, X_cal, y_cal, alpha)`: `MapieClassifier(estimator=model, cv="prefit")`, fit on calibration split. `predict_bands(conformal, X, thresholds)`: apply prediction set logic (Section 4 of architecture); returns `pd.Series` with values `"auto_fp"`, `"uncertain"`, `"auto_tp"`. `compute_coverage(conformal, X_cal, y_cal)`: empirical coverage on calibration set. |
+| 2.1.1 | Implement `conformal.py` | `src/models/conformal.py` | `fit_conformal(model, X_cal, y_cal, alpha)`: wraps `lgb.Booster` in `_BoosterWrapper` (adds `predict_proba`), creates `SplitConformalClassifier(estimator=wrapper, confidence_level=1-alpha, prefit=True)`, calls `clf.conformalize(X_cal, y_cal)`. `predict_bands(conformal, X, thresholds)`: `predict_set()` returns `(y_pred, y_pset)` where `y_pset[:, 1, 0]` = TP in set; band logic per architecture Section 4. `compute_coverage`: `classification_coverage_score` returns array; use `float(result[0])`. `save_conformal` / `load_conformal` with SHA-256 integrity. |
 | 2.1.2 | Write Story 2.1 tests | `tests/test_epic2_llm.py` | TC-2.1.1 through TC-2.1.6 (fits, coverage >= 95%, valid band values, determinism, FN rate <= 1%, no overlaps). |
 
 **Definition of Done**:
@@ -195,7 +204,26 @@ This is the most complex story. The security modules must be implemented before 
 
 ---
 
-## Epic 3: Analyst UI and Demo
+## Post-Epic-2 Production Hardening -- **COMPLETE**
+
+These items were identified after Epic 2 tests passed during a production-readiness audit. They do not add new features; they replace stubs and placeholder implementations with real code.
+
+| Item | File(s) | What changed |
+|------|---------|--------------|
+| `save_conformal` / `load_conformal` | `src/models/conformal.py` | Implemented with pickle + SHA-256 integrity check; was missing entirely |
+| FAISS build script | `scripts/build_rag_index.py` | New script; embeds full training set, saves FAISS index + training_df.parquet |
+| Pipeline run entry point | `scripts/run_pipeline.py` | New script; loads all artifacts, creates real Anthropic client, processes batch, prints summary |
+| TripwireStore file persistence | `src/pipeline/tripwire.py` | `TripwireStore(path=...)` appends to JSON Lines file and reloads on startup |
+| `adversarial.confidence_threshold_high` | `config.yaml` + `adversarial.py` | Moved `0.80` literal to config; `reconcile()` accepts it as a parameter |
+| `stage1.shap_top_k` | `config.yaml` + `orchestrator.py` | Moved `k=5` literal to config |
+| `rag.embedding_batch_size` | `config.yaml` + `embeddings.py` | Moved `batch_size=64` literal to config |
+| `data.test_day` | `config.yaml` + all three scripts | Moved `test_day=5` literal to config |
+| `agents.max_retries` | `config.yaml` + `a2a/client.py` | Wired config value (3) into adjudicator graph state; was defaulting to 2 |
+| `conformal.artifact_path` | `config.yaml` | Added missing config key; was hardcoded in `train_stage1.py` |
+
+---
+
+## Epic 3: Analyst UI and Demo -- **IN PROGRESS** (Story 3.1 next)
 
 ---
 

@@ -1,8 +1,8 @@
 # Architecture and Design: SOC False Positive Reduction POC
 
-**Version**: 1.0  
+**Version**: 2.0  
 **Date**: 2026-05-25  
-**Status**: Draft - Awaiting Approval
+**Status**: Approved (Epics 1 and 2 complete; Epic 3 in progress)
 
 ---
 
@@ -209,24 +209,30 @@ def top_k_features(shap_values: np.ndarray, feature_names: list[str], k: int) ->
 
 **Interface**:
 ```python
-def fit_conformal(model: lgb.Booster, X_cal: pd.DataFrame, y_cal: pd.Series, alpha: float) -> MapieClassifier: ...
-def predict_bands(conformal: MapieClassifier, X: pd.DataFrame, thresholds: dict) -> pd.Series: ...
-def compute_coverage(conformal: MapieClassifier, X_cal: pd.DataFrame, y_cal: pd.Series) -> float: ...
+def fit_conformal(model: lgb.Booster, X_cal: pd.DataFrame, y_cal: pd.Series, alpha: float) -> SplitConformalClassifier: ...
+def predict_bands(conformal: SplitConformalClassifier, X: pd.DataFrame, thresholds: dict) -> pd.Series: ...
+def compute_coverage(conformal: SplitConformalClassifier, X_cal: pd.DataFrame, y_cal: pd.Series) -> float: ...
+def save_conformal(conformal: SplitConformalClassifier, path: str, checksums_path: str | None) -> None: ...
+def load_conformal(path: str, checksums_path: str | None) -> SplitConformalClassifier: ...
 ```
 
 **Key behaviors**:
-- Uses `mapie.classification.MapieClassifier` with `cv="prefit"` (model is already trained).
+- Uses `mapie.classification.SplitConformalClassifier` with `prefit=True` (MAPIE >= 1.4.0 API).
+- `lgb.Booster` is wrapped in `_BoosterWrapper` (provides `predict_proba`) before passing to `SplitConformalClassifier`.
+- `fit_conformal` calls `clf.conformalize(X_cal, y_cal)` to calibrate the predictor.
+- `save_conformal` and `load_conformal` use SHA-256 integrity via `integrity.save_hash` / `verify_hash`, writing to the shared `models/checksums.json`.
 - `predict_bands` returns a Series with values `"auto_fp"`, `"uncertain"`, `"auto_tp"` for each row.
 - Band assignment logic:
 
 ```
-prediction_sets = conformal.predict(X, alpha=alpha)
-# prediction_sets shape: (n_samples, n_classes, 1)
-# For binary: index 0 = P(FP included), index 1 = P(TP included)
+_, y_pset = conformal.predict_set(X)
+# y_pset shape: (n_samples, n_classes, 1)
+# y_pset[:, 0, 0] = True if class 0 (benign/FP) is in the prediction set
+# y_pset[:, 1, 0] = True if class 1 (attack/TP) is in the prediction set
 
 for each alert i:
-  tp_in_set = prediction_sets[i, 1, 0]   # True if TP is in the prediction set
-  fp_in_set = prediction_sets[i, 0, 0]   # True if FP is in the prediction set
+  tp_in_set = y_pset[i, 1, 0]   # True if TP is in the prediction set
+  fp_in_set = y_pset[i, 0, 0]   # True if FP is in the prediction set
 
   if not tp_in_set:
     band = "auto_fp"    # confident this is not a TP
@@ -255,7 +261,7 @@ def alert_to_text(alert: pd.Series) -> str: ...
 - Model: `sentence-transformers/all-MiniLM-L6-v2`, output dimension 384.
 - `device="auto"` resolves to `"cuda"` if `torch.cuda.is_available()`, else `"cpu"`.
 - `alert_to_text` serializes key alert fields to a natural-language string: `"Protocol: TCP, Dst Port: 443, Flow Duration: 1234, ..."`.
-- Batch size configurable. GPU batching uses `encode(batch_size=256)`.
+- `embed_alerts(model, texts, batch_size)` accepts `batch_size` from `config["rag"]["embedding_batch_size"]` (default 64). GPU batching is automatic when device is CUDA.
 
 ---
 
@@ -626,17 +632,18 @@ The routing uses MAPIE's prediction sets rather than a raw threshold, which prov
 Input: trained LightGBM, calibration set (X_cal, y_cal), alpha=0.05
 
 Fit:
-  conformal = MapieClassifier(estimator=model, cv="prefit")
-  conformal.fit(X_cal, y_cal)
+  wrapper = _BoosterWrapper(lgb_booster)
+  conformal = SplitConformalClassifier(estimator=wrapper, confidence_level=0.95, prefit=True)
+  conformal.conformalize(X_cal, y_cal)
 
 Inference on alert x:
-  y_pred, prediction_sets = conformal.predict(x.reshape(1,-1), alpha=0.05)
-  # prediction_sets: shape (1, 2, 1)
-  # prediction_sets[0, 0, 0] = True if class 0 (benign/FP) is in the 95% prediction set
-  # prediction_sets[0, 1, 0] = True if class 1 (attack/TP) is in the 95% prediction set
+  _, y_pset = conformal.predict_set(x.reshape(1,-1))
+  # y_pset: shape (1, 2, 1) -- (n_samples, n_classes, 1)
+  # y_pset[0, 0, 0] = True if class 0 (benign/FP) is in the 95% prediction set
+  # y_pset[0, 1, 0] = True if class 1 (attack/TP) is in the 95% prediction set
 
-  fp_in_set = prediction_sets[0, 0, 0]
-  tp_in_set = prediction_sets[0, 1, 0]
+  fp_in_set = y_pset[0, 0, 0]
+  tp_in_set = y_pset[0, 1, 0]
 
   if not tp_in_set:
     band = "auto_fp"     # we are 95% confident this is not a TP
@@ -694,8 +701,8 @@ The adversarial agent runs as a second LLM call after Stage 2 completes. It rece
 | Stage 2 Verdict | Adversarial Counter | Final Verdict | Note |
 |----------------|---------------------|---------------|------|
 | V | V (same) | V | Confidence = average of both |
-| V (conf >= 0.7) | V' (different) | V | Flag: "low-confidence reconciliation" |
-| V (conf < 0.7) | V' (different) | needs_review | Genuine disagreement |
+| V (conf >= 0.80) | V' (different) | V | Flag: "low-confidence reconciliation" |
+| V (conf < 0.80) | V' (different) | needs_review | Genuine disagreement |
 | V | Call failed | V | Log adversarial failure |
 | needs_review | any | needs_review | Stage 2 already uncertain |
 
@@ -851,79 +858,73 @@ Reason step by step, then output the JSON.
 ```
 soc-fp-reduction/
 ├── docs/
-│   ├── requirements.md         # this project's requirements
-│   ├── architecture.md         # this document
-│   ├── test_plan.md            # test specifications
-│   ├── sprint_backlog.md       # (post-approval)
-│   ├── threat_model.md         # STRIDE analysis and controls
-│   └── setup.md                # installation guide
+│   ├── requirements.md            # functional and non-functional requirements
+│   ├── architecture.md            # this document
+│   ├── test_plan.md               # test specifications
+│   ├── sprint_backlog.md          # sprint plan and story status
+│   ├── threat_model.md            # STRIDE analysis and controls
+│   └── setup.md                   # installation and workflow guide
 ├── src/
-│   ├── __init__.py
 │   ├── data/
-│   │   ├── __init__.py
-│   │   ├── loader.py               # FR-01: dataset loading and validation
-│   │   └── features.py             # FR-02: feature engineering and temporal split
+│   │   ├── loader.py              # FR-01: dataset loading and validation
+│   │   └── features.py            # FR-02: feature engineering and temporal split
 │   ├── models/
-│   │   ├── __init__.py
-│   │   ├── classifier.py           # FR-03: LightGBM/XGBoost training and evaluation
-│   │   ├── conformal.py            # FR-04: conformal prediction and band routing
-│   │   ├── explainer.py            # FR-03.6: SHAP TreeExplainer
-│   │   └── integrity.py            # FR-10.4 (S4): model artifact hash verification
+│   │   ├── classifier.py          # FR-03: LightGBM training, Optuna tuning, evaluation
+│   │   ├── conformal.py           # FR-04: SplitConformalClassifier, three-band routing, save/load
+│   │   ├── explainer.py           # FR-03.6: SHAP TreeExplainer
+│   │   └── integrity.py           # S4: SHA-256 hash verification for model artifacts
 │   ├── llm/
-│   │   ├── __init__.py
-│   │   ├── embeddings.py           # FR-05: MiniLM-L6-v2 embeddings
-│   │   ├── retrieval.py            # FR-05: FAISS index build and query
-│   │   ├── sanitizer.py            # S1: prompt injection mitigation
-│   │   ├── validators.py           # S5: LLM output Pydantic validation + A2A schemas
-│   │   ├── redactor.py             # S6: data minimization before API calls
-│   │   ├── rate_limiter.py         # S7: rate limiting and circuit breaker
+│   │   ├── adjudicator.py         # Stage 2 prompt assembly and Claude API call
+│   │   ├── adversarial.py         # adversarial prompt and reconciliation logic
+│   │   ├── embeddings.py          # FR-05: MiniLM-L6-v2 sentence embeddings
+│   │   ├── retrieval.py           # FR-05: FAISS index build, save, load, query
+│   │   ├── sanitizer.py           # S1: prompt injection mitigation
+│   │   ├── validators.py          # S5: Pydantic schemas for all LLM outputs
+│   │   ├── redactor.py            # S6: field allowlist before API calls
+│   │   ├── rate_limiter.py        # S7: rate limiting and circuit breaker
 │   │   ├── graphs/
-│   │   │   ├── __init__.py
-│   │   │   ├── state_schemas.py    # AdjudicatorState, AdversarialState TypedDicts
-│   │   │   ├── adjudicator_graph.py# FR-06: LangGraph StateGraph for Stage 2 adjudication
-│   │   │   ├── adversarial_graph.py# FR-06.5: LangGraph StateGraph for adversarial validation
-│   │   │   └── reconcile.py        # FR-06.6: verdict reconciliation (plain function)
+│   │   │   ├── adjudicator_graph.py  # FR-06: LangGraph StateGraph for Stage 2
+│   │   │   └── adversarial_graph.py  # FR-06.5: LangGraph StateGraph for adversarial pass
 │   │   └── a2a/
-│   │       ├── __init__.py
-│   │       ├── schemas.py          # A2A task input/output Pydantic models
-│   │       ├── adjudicator_server.py# A2A HTTP server wrapping adjudicator_graph
-│   │       ├── adversarial_server.py# A2A HTTP server wrapping adversarial_graph
-│   │       ├── client.py           # A2A client used by orchestrator
+│   │       ├── client.py             # A2A inprocess client (http mode not implemented)
 │   │       └── agent_cards/
-│   │           ├── adjudicator.json # A2A Agent Card for adjudicator
-│   │           └── adversarial.json # A2A Agent Card for adversarial
+│   │           ├── adjudicator.json  # A2A Agent Card for adjudicator
+│   │           └── adversarial.json  # A2A Agent Card for adversarial agent
 │   ├── pipeline/
-│   │   ├── __init__.py
-│   │   ├── orchestrator.py         # FR-07: pipeline wiring; calls agents via A2A client
-│   │   └── tripwire.py             # FR-07.3: retroactive IOC check
+│   │   ├── orchestrator.py        # FR-07: end-to-end pipeline wiring
+│   │   └── tripwire.py            # FR-07.3: retroactive IOC check with file persistence
+│   ├── utils/
+│   │   ├── secrets.py             # S2: API key loading and log redaction
+│   │   └── audit.py               # S3: SHA-256 hash-chained audit log
 │   └── ui/
-│       ├── __init__.py
-│       └── dashboard.py            # FR-08, FR-09: Streamlit analyst dashboard
-├── src/utils/
-│   ├── __init__.py
-│   ├── secrets.py                  # S2: API key management and redaction
-│   └── audit.py                    # S3: structured audit logging with hash chain
+│       └── dashboard.py           # FR-08, FR-09: Streamlit analyst dashboard (Epic 3)
+├── scripts/
+│   ├── download_data.py           # CICIDS2017 download helper
+│   ├── train_stage1.py            # train LightGBM + fit and save conformal predictor
+│   ├── build_rag_index.py         # embed training data, build and save FAISS index
+│   └── run_pipeline.py            # production entry point: loads all artifacts, processes alerts
 ├── tests/
-│   ├── __init__.py
-│   ├── conftest.py                 # shared fixtures: 10K subset, mock API, A2A mocks
-│   ├── test_epic1_data.py          # Epic 1: data, features, classifier, conformal
-│   ├── test_epic2_llm.py           # Epic 2: embeddings, retrieval, LangGraph graphs, A2A
-│   ├── test_epic3_ui.py            # Epic 3: dashboard rendering and feedback
-│   └── test_security.py            # security controls: sanitizer, validators, redactor, audit
+│   ├── conftest.py                # shared fixtures (10K subset, mock Anthropic client)
+│   ├── test_epic1_data.py         # Epic 1: data, features, classifier, conformal
+│   ├── test_epic2_llm.py          # Epic 2: embeddings, retrieval, LangGraph, A2A, pipeline
+│   ├── test_epic3_ui.py           # Epic 3: dashboard rendering and feedback
+│   └── test_security.py           # security controls: sanitizer, validators, redactor, audit
 ├── data/
-│   ├── raw/                        # CICIDS2017 CSVs (not committed)
-│   ├── processed/                  # pipeline output, tripwire store, feedback
-│   └── fixtures/                   # 10K stratified subset (committed for CI)
-├── models/                         # trained artifacts and FAISS index (not committed)
-├── metrics/                        # evaluation output JSON files
-├── logs/
-│   ├── app.log                     # application log
-│   └── audit.jsonl                 # append-only audit log
-├── config.yaml                     # all configuration; no secrets
-├── .env                            # secrets (not committed)
-├── .env.example                    # template (committed)
-├── requirements.txt                # pinned dependencies
-└── CLAUDE.md                       # project conventions
+│   ├── raw/                       # CICIDS2017 CSVs (not committed)
+│   └── fixtures/                  # 10K stratified subset (committed for CI)
+├── models/                        # trained artifacts (not committed)
+│   ├── stage1_model.pkl           # LightGBM model
+│   ├── conformal.pkl              # SplitConformalClassifier
+│   ├── faiss_index.bin            # FAISS index
+│   ├── training_df.parquet        # training rows aligned to FAISS index
+│   ├── tripwire.jsonl             # persistent auto-FP store (append-only)
+│   └── checksums.json             # SHA-256 hashes for all model artifacts
+├── results/                       # pipeline run outputs
+├── config.yaml                    # all configuration; no secrets
+├── .env                           # secrets (not committed)
+├── .env.example                   # template (committed)
+├── requirements.txt               # Python dependencies
+└── CLAUDE.md                      # project conventions
 ```
 
 ---
@@ -938,7 +939,7 @@ Each agent exposes:
 - An **Agent Card** at `GET /.well-known/agent.json` describing its identity, capabilities, and skill schemas.
 - A **task endpoint** at `POST /` accepting `tasks/send` JSON-RPC requests.
 
-The orchestrator calls agents via the A2A client (`src/llm/a2a/client.py`). In the default `inprocess` mode (config: `a2a.mode=inprocess`), both agent servers run in the same process on different local ports, removing the need to launch separate processes during development and testing. In `http` mode, they run as independent services.
+The orchestrator calls agents via the A2A client (`src/llm/a2a/client.py`). In `inprocess` mode (config: `a2a.mode=inprocess`), the client invokes the LangGraph compiled graphs directly in-process -- no HTTP overhead, no separate processes to launch. This is the only implemented mode. `http` mode raises `NotImplementedError` and is planned for a future release when independent deployment is needed.
 
 ### 10.2 Agent Cards
 
