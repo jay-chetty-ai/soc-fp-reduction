@@ -11,7 +11,7 @@
 | 1 | Data Ingestion and Stage 1 Classifier | **Complete** (103 tests passing) |
 | 2 | Conformal Calibration and Stage 2 LLM | **Complete** (103 tests passing) |
 | Post-Epic-2 | Production hardening (real scripts, config cleanup) | **Complete** |
-| 3 | Analyst UI and Demo | **In Progress** (Story 3.1 next) |
+| 3 | Analyst UI and Demo | **Complete** (148 tests passing) |
 
 ---
 
@@ -223,7 +223,7 @@ These items were identified after Epic 2 tests passed during a production-readin
 
 ---
 
-## Epic 3: Analyst UI and Demo -- **IN PROGRESS** (Story 3.1 next)
+## Epic 3: Analyst UI and Demo -- **COMPLETE**
 
 ---
 

@@ -78,11 +78,18 @@ python scripts/build_rag_index.py --sample-size 50000
 python scripts/run_pipeline.py --input data/fixtures/fixture_10k.csv --output results/run.csv
 ```
 
-### Run the dashboard (Epic 3 -- in progress)
+### Run the dashboard
 
 ```bash
 streamlit run src/ui/dashboard.py
 ```
+
+Default credentials (change before deploying to a shared environment):
+
+| Username | Password | Role |
+|----------|----------|------|
+| `analyst` | `analyst123` | analyst (can submit feedback) |
+| `viewer` | `viewer123` | viewer (read-only) |
 
 ### Run tests
 
@@ -166,9 +173,9 @@ soc-fp-reduction/
 |------|-------------|--------|
 | 1 | Data Ingestion & Stage 1 Classifier | Complete |
 | 2 | Conformal Calibration & Stage 2 LLM | Complete |
-| 3 | Analyst UI & Demo | In progress |
+| 3 | Analyst UI & Demo | Complete |
 
-**Test count**: 103 tests passing (Epics 1 + 2 + security).
+**Test count**: 148 tests passing (Epics 1 + 2 + 3 + security).
 
 ## Configuration Reference
 

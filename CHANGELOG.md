@@ -6,12 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] -- Epic 3 in progress
+## [3.0.0] -- Epic 3 Complete -- 2026-05-26
 
-### In Progress
-- Story 3.1: Streamlit analyst dashboard (alert list, detail view, SHAP plot, LLM rationale, feedback, dark/light mode, auth)
-- Story 3.2: Metrics dashboard (PR-AUC curve, confusion matrix, band distribution)
-- Story 3.3: Documentation and screenshots
+### Added
+
+**Analyst dashboard (Story 3.1)**
+- `src/ui/dashboard.py`: full Streamlit analyst UI with role-based authentication via `streamlit-authenticator`
+- Alert list view with sortable table, band color coding (auto-FP: green, uncertain: amber, auto-TP: red), and sidebar band filter
+- Alert detail view: feature table, SHAP horizontal bar chart (red = push toward TP, blue = push toward FP), LLM rationale, adversarial counter-rationale, top-5 similar historical alerts with cosine similarity scores, recommended actions
+- Feedback capture (analyst role only): verdict override dropdown, free-text rationale, writes to `data/processed/feedback.jsonl` and audit log
+- Dark/light mode toggle with CSS injection; theme persists in session state
+- Session timeout enforced from `config.yaml auth.session_timeout_minutes`
+- Viewer role: feedback section hidden; all read-only views available
+
+**Metrics page (Story 3.2)**
+- PR-AUC precision-recall curve (matplotlib)
+- Confusion matrix heatmap (seaborn)
+- Band distribution pie chart (matplotlib)
+- Summary table: total alerts, band counts, volume reduction %, analyst hours saved
+- Reads from latest `metrics/evaluation_*.json` written by `scripts/run_pipeline.py`
+
+**Pipeline metrics output (Story 3.2)**
+- `scripts/run_pipeline.py`: `_compute_metrics()` computes PR-AUC, precision, recall, F1, confusion matrix, decimated PR curve (200 pts), band counts, verdict counts, volume reduction, analyst time saved; writes to `metrics/evaluation_<timestamp>.json` and `results/evaluation_<timestamp>.parquet`
+- `src/pipeline/orchestrator.py`: `DispositionRecord` extended with `stage2_verdict`, `stage2_confidence`, `stage2_rationale`, `adversarial_verdict`, `adversarial_rationale`, `final_confidence`, `reconciliation_note`, `recommended_actions`, `similar_alerts`; SHAP computed for all three bands
+
+**Documentation (Story 3.3)**
+- `docs/setup.md`: full setup guide with 3-command pipeline workflow, CICIDS2017 download instructions, config reference, troubleshooting
+- `docs/screenshots/`: placeholder directory for dashboard screenshots (captured after training run)
+- `README.md`: Epic status table updated to Complete, test count 148, default dashboard credentials, dashboard launch instructions
+
+**Auth config (S8)**
+- `config.yaml auth:` section: bcrypt-hashed credentials for `analyst` and `viewer` accounts, cookie settings, session timeout
+
+**Tests (Story 3.1-3.3)**
+- `tests/test_epic3_ui.py`: 45 tests covering DispositionRecord schema, data loading, band filtering, user role resolution, SHAP chart rendering, feedback writing, metrics chart rendering, metrics correctness, and module imports
+
+### Changed
+- `config.yaml`: added `auth` and `dashboard` sections
+- `src/pipeline/orchestrator.py`: `DispositionRecord` now carries full Stage 2 and adversarial fields; `shap_top5` populated for all bands (not uncertain only)
 
 ---
 
