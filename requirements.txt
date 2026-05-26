@@ -16,6 +16,7 @@ streamlit-authenticator>=0.3
 pydantic>=2.9
 pytest>=8.0
 pyyaml>=6.0
+python-dotenv>=1.0
 # Hyperparameter tuning
 optuna>=4.0
 # LangGraph agent framework

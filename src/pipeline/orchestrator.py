@@ -119,6 +119,26 @@ def run_batch(
     else:
         true_labels = None
 
+    # Pre-embed all uncertain-band alerts in one batch to avoid per-alert round-trips.
+    uncertain_mask = bands == "uncertain"
+    uncertain_indices = list(df.index[uncertain_mask])
+    uncertain_df = df.loc[uncertain_indices]
+    uncertain_texts: list[str] = []
+    uncertain_embeddings = None
+    if not uncertain_df.empty:
+        uncertain_texts = [alert_to_text(row) for _, row in uncertain_df.iterrows()]
+        batch_size = config.get("rag", {}).get("embedding_batch_size", 64)
+        uncertain_embeddings = embed_alerts(
+            components.embedding_model, uncertain_texts, batch_size=batch_size
+        )
+        logger.info(
+            "Pre-embedded %d uncertain-band alerts -> shape %s.",
+            len(uncertain_texts),
+            uncertain_embeddings.shape,
+        )
+    # Map original df index -> position in uncertain_embeddings array
+    uncertain_pos: dict[Any, int] = {idx: pos for pos, idx in enumerate(uncertain_indices)}
+
     records: list[DispositionRecord] = []
 
     for i, (idx, row) in enumerate(df.iterrows()):
@@ -152,11 +172,11 @@ def run_batch(
             ))
             continue
 
-        # Uncertain band: RAG retrieval then Stage 2 LLM adjudication
-        alert_text = alert_to_text(row)
-        query_emb = embed_alerts(components.embedding_model, [alert_text])
+        # Uncertain band: use pre-computed embedding for RAG retrieval.
+        alert_text = uncertain_texts[uncertain_pos[idx]]
+        query_emb = uncertain_embeddings[uncertain_pos[idx]]
         sims, sim_idx = retrieve_similar(
-            components.faiss_index, query_emb[0], k=config["rag"]["top_k"]
+            components.faiss_index, query_emb, k=config["rag"]["top_k"]
         )
         similar: list[dict] = [
             {

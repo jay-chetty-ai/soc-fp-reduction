@@ -5,6 +5,13 @@ import os
 import re
 from typing import Optional
 
+from dotenv import load_dotenv
+
+# Load .env once at import time so callers don't need to manage it.
+# Tests that patch os.environ with patch.dict(..., clear=True) still work
+# because patch.dict overrides the already-loaded values for the test's scope.
+load_dotenv()
+
 _API_KEY_PATTERN = re.compile(r"sk-ant-[^\s\"']+")
 
 
@@ -35,6 +42,9 @@ def redact_secrets(msg: str) -> str:
 
 def load_api_key() -> str:
     """Load the Anthropic API key from the environment.
+
+    The .env file is loaded at module import time, so the key is available
+    via os.environ by the time this function is called.
 
     Raises:
         ValueError: If the key is missing or does not match the expected format.
