@@ -1,0 +1,11 @@
+{
+  "verdict": "true_positive",
+  "confidence": 0.87,
+  "rationale": "The alert exhibits characteristics consistent with a DoS Hulk attack. The flow duration is extremely short (89 microseconds) with a very high packet rate (142,857 packets per second). The destination port 80 and TCP SYN flag activity support HTTP flood classification. Similar historical alerts with matching port and protocol combinations were all confirmed true positives.",
+  "supporting_history": ["alert_001_20170704", "alert_042_20170705", "alert_118_20170703"],
+  "recommended_actions": [
+    "Block source IP at perimeter firewall",
+    "Enable rate limiting on port 80",
+    "Escalate to Tier-2 analyst for source attribution"
+  ]
+}

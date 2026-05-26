@@ -5,6 +5,7 @@ data/processed/*
 !data/processed/.gitkeep
 data/fixtures/*
 !data/fixtures/.gitkeep
+!data/fixtures/fixture_10k.csv
 
 # Models
 models/*

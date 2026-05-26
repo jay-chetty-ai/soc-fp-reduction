@@ -1,0 +1,159 @@
+"""Feature engineering for CICIDS2017 flow records."""
+
+import logging
+from typing import Optional
+
+import numpy as np
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+# Columns that are not numeric features and should never appear in X matrices.
+_NON_FEATURE_COLS = {"Label", "Timestamp", "Flow ID", "Source IP", "Destination IP"}
+
+# Timestamp formats present in various CICIDS2017 release versions.
+_TIMESTAMP_FORMATS = [
+    "%d/%m/%Y %H:%M",
+    "%d/%m/%Y %H:%M:%S",
+    "%Y-%m-%d %H:%M:%S",
+    "%m/%d/%Y %H:%M",
+]
+
+
+def _parse_timestamps(series: pd.Series) -> pd.Series:
+    """Try each known CICIDS2017 timestamp format until one parses all rows."""
+    for fmt in _TIMESTAMP_FORMATS:
+        parsed = pd.to_datetime(series, format=fmt, errors="coerce")
+        if parsed.notna().all():
+            return parsed
+    # Fallback: let pandas infer format; NaT rows are dropped later in temporal split
+    logger.warning(
+        "Timestamp column could not be parsed with any known format; "
+        "falling back to pd.to_datetime inference."
+    )
+    return pd.to_datetime(series, errors="coerce")
+
+
+def clean_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Replace inf/-inf with NaN and drop rows with NaN in numeric feature columns.
+
+    Non-numeric columns (Label, Timestamp, IPs) are preserved unchanged.
+
+    Args:
+        df: Raw CICIDS2017 DataFrame.
+
+    Returns:
+        Cleaned DataFrame with no inf or NaN values in numeric feature columns.
+    """
+    feature_cols = get_feature_columns(df)
+    df = df.copy()
+    # Replace inf/-inf with NaN in numeric columns only
+    df[feature_cols] = df[feature_cols].replace([np.inf, -np.inf], np.nan)
+    before = len(df)
+    df = df.dropna(subset=feature_cols).reset_index(drop=True)
+    dropped = before - len(df)
+    if dropped > 0:
+        logger.warning("clean_features: dropped %d rows with NaN/inf values.", dropped)
+    return df
+
+
+def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse the Timestamp column and add hour_of_day and day_of_week features.
+
+    Args:
+        df: DataFrame with a 'Timestamp' column.
+
+    Returns:
+        DataFrame with two new integer columns: hour_of_day [0-23] and
+        day_of_week [0-6] (0=Monday per ISO convention).
+
+    Raises:
+        KeyError: If 'Timestamp' column is absent.
+    """
+    if "Timestamp" not in df.columns:
+        raise KeyError("'Timestamp' column not found in DataFrame.")
+    df = df.copy()
+    parsed = _parse_timestamps(df["Timestamp"])
+    df["hour_of_day"] = parsed.dt.hour.astype(int)
+    df["day_of_week"] = parsed.dt.dayofweek.astype(int)
+    return df
+
+
+def temporal_train_test_split(
+    df: pd.DataFrame,
+    test_day: int = 5,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split a CICIDS2017 DataFrame on calendar day.
+
+    Determines the ordered unique dates from the Timestamp column. The
+    first (test_day - 1) dates form the training set; the test_day-th date
+    forms the test set. Day numbering is 1-based.
+
+    Args:
+        df: DataFrame with a 'Timestamp' column.
+        test_day: 1-based index of the day to use as the test set (default 5).
+
+    Returns:
+        (train_df, test_df) with no index overlap.
+
+    Raises:
+        KeyError: If 'Timestamp' column is absent.
+        ValueError: If the dataset has fewer days than test_day.
+    """
+    if "Timestamp" not in df.columns:
+        raise KeyError("'Timestamp' column not found in DataFrame.")
+    parsed = _parse_timestamps(df["Timestamp"])
+    dates = parsed.dt.normalize()
+    unique_dates = sorted(dates.dropna().unique())
+    if len(unique_dates) < test_day:
+        raise ValueError(
+            f"Dataset has fewer than {test_day} unique dates "
+            f"({len(unique_dates)} found); cannot select test_day={test_day}."
+        )
+    test_date = unique_dates[test_day - 1]
+    test_mask = dates == test_date
+    train_mask = dates < test_date
+    train_df = df[train_mask].reset_index(drop=True)
+    test_df = df[test_mask].reset_index(drop=True)
+    logger.info(
+        "Temporal split: train=%d rows (days 1-%d), test=%d rows (day %d).",
+        len(train_df),
+        test_day - 1,
+        len(test_df),
+        test_day,
+    )
+    return train_df, test_df
+
+
+def get_feature_columns(df: pd.DataFrame) -> list[str]:
+    """Return numeric feature column names, excluding non-feature columns.
+
+    Excludes Label, Timestamp, Flow ID, and IP address columns.
+
+    Args:
+        df: DataFrame with CICIDS2017 columns.
+
+    Returns:
+        List of column names safe to use as ML features.
+    """
+    return [
+        c for c in df.select_dtypes(include=[np.number]).columns
+        if c not in _NON_FEATURE_COLS
+    ]
+
+
+def encode_labels(df: pd.DataFrame) -> pd.Series:
+    """Encode the Label column to binary: BENIGN -> 0, all attacks -> 1.
+
+    Args:
+        df: DataFrame with a 'Label' column.
+
+    Returns:
+        Integer Series of 0/1 values aligned with df's index.
+
+    Raises:
+        KeyError: If 'Label' column is absent.
+    """
+    if "Label" not in df.columns:
+        raise KeyError("'Label' column not found in DataFrame.")
+    return (df["Label"] != "BENIGN").astype(int)

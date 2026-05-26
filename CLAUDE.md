@@ -15,20 +15,20 @@ A two-stage hybrid alert triage pipeline:
 - **Stage 1**: A calibrated LightGBM/XGBoost classifier scores every alert for P(true_positive). Conformal prediction splits alerts into three bands: auto-close FP, escalate TP, and uncertain.
 - **Stage 2**: The uncertain band goes to an LLM (Claude API) with RAG over historical alert dispositions. The LLM reasons from precedent and outputs a structured verdict with natural language explanation.
 - **Adversarial validation**: A second LLM call with a different prompt attempts to disprove Stage 2 findings (inspired by Cloudflare’s Project Glasswing multi-agent harness architecture, May 2026).
-- **Analyst UI**: Streamlit dashboard showing alert details, SHAP explanations, LLM rationale, similar historical alerts, and feedback capture.
+- **Analyst UI**: Streamlit dashboard showing alert details, SHAP explanations, LLM rationale, similar historical alerts, and feedback capture. Add dark and light mode color schemes
 
 ### Key design decisions (already made, do not revisit)
 
 1. **Dataset**: CICIDS2017 as primary (2.8M flows, 78 features, 5-day capture). No OCSF mapping for this POC – use the dataset’s native schema.
-1. **Stage 1 model**: LightGBM with `is_unbalance=True`. XGBoost as alternative for comparison. Not deep learning – XGBoost/LightGBM outperform DL on tabular security data (Shwartz-Ziv & Armon 2021, confirmed 2024 111-dataset benchmark).
-1. **Class imbalance handling**: cost-sensitive learning via `is_unbalance=True` or `scale_pos_weight`. Skip CTGAN/SMOTE for this POC.
-1. **Conformal prediction**: `mapie` library, alpha=0.05 for 95% coverage guarantee. Three bands: P(TP)<0.05 auto-FP, P(TP)>0.85 auto-TP, middle band routes to Stage 2.
-1. **Embeddings**: `sentence-transformers/all-MiniLM-L6-v2` (384-dim). CUDA when available, CPU fallback.
-1. **Vector store**: `faiss-cpu` for the RAG retrieval layer.
-1. **Stage 2 LLM**: Anthropic Claude API (claude-sonnet-4-20250514). Configurable to swap for local model later.
-1. **Explainability**: SHAP TreeExplainer on the LightGBM output. LLM-generated natural language rationale for Stage 2.
-1. **Evaluation**: PR-AUC as primary metric (not ROC-AUC). Temporal hold-out: train on days 1-4, test on day 5.
-1. **No GPU required for core pipeline**. LightGBM and SHAP are CPU-only. Embeddings benefit from GPU but work on CPU. LLM inference is API-based.
+2. **Stage 1 model**: LightGBM with `is_unbalance=True`. XGBoost as alternative for comparison. Not deep learning – XGBoost/LightGBM outperform DL on tabular security data (Shwartz-Ziv & Armon 2021, confirmed 2024 111-dataset benchmark).
+3. **Class imbalance handling**: cost-sensitive learning via `is_unbalance=True` or `scale_pos_weight`. Skip CTGAN/SMOTE for this POC.
+4. **Conformal prediction**: `mapie` library, alpha=0.05 for 95% coverage guarantee. Three bands: P(TP)<0.05 auto-FP, P(TP)>0.85 auto-TP, middle band routes to Stage 2.
+5. **Embeddings**: `sentence-transformers/all-MiniLM-L6-v2` (384-dim). CUDA when available, CPU fallback.
+6. **Vector store**: `faiss-cpu` for the RAG retrieval layer.
+7. **Stage 2 LLM**: Anthropic Claude API (claude-sonnet-4-20250514). Configurable to swap for local model later.
+8. **Explainability**: SHAP TreeExplainer on the LightGBM output. LLM-generated natural language rationale for Stage 2.
+9. **Evaluation**: PR-AUC as primary metric (not ROC-AUC). Temporal hold-out: train on days 1-4, test on day 5.
+10. **Use GPU as required for core pipeline**. LightGBM and SHAP. Embeddings benefit from GPU so use GPU as needed. LLM inference is API-based.
 
 ### What is explicitly out of scope for this POC
 
@@ -181,12 +181,14 @@ After specs are approved, create a sprint backlog (`docs/sprint_backlog.md`) org
 ## Development Rules
 
 1. **Test-gated progression**: Do not start the next story until all tests for the current story pass. Run the full test suite after each story completion.
-1. **Test command**: `pytest tests/ -v --tb=short` for the full suite. Each epic should have its own test module (e.g., `tests/test_epic1_data.py`, `tests/test_epic2_llm.py`).
-1. **No hardcoded paths**: Use a config file (`config.yaml` or `settings.py`) for data paths, API keys, model paths, thresholds.
-1. **Logging**: Use Python `logging` module, not print statements. Log level configurable.
-1. **Type hints**: All function signatures must have type hints.
-1. **Docstrings**: All public functions must have docstrings.
-1. **Git commits**: Commit after each passing story with a descriptive message referencing the story number.
+2. **Test command**: `pytest tests/ -v --tb=short` for the full suite. Each epic should have its own test module (e.g., `tests/test_epic1_data.py`, `tests/test_epic2_llm.py`).
+3. **No hardcoded paths**: Use a config file (`config.yaml` or `settings.py`) for data paths, API keys, model paths, thresholds.
+4. **Logging**: Use Python `logging` module, not print statements. Log level configurable.
+5. **Type hints**: All function signatures must have type hints.
+6. **Docstrings**: All public functions must have docstrings.
+7. **Git commits**: Commit after each passing story with a descriptive message referencing the story number.
+8. **Treat this as production code**: do not rush to call it done by adding some dummy code that displays dummy values, make it real.
+9. **Code review**: This code will be reviewed by a Principal Engineer and any issues found will be held against me so be through  
 
 -----
 
