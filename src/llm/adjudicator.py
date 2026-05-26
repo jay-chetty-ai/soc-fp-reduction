@@ -85,6 +85,23 @@ Reason step by step before reaching a conclusion. Then return ONLY a valid JSON 
 }}"""
 
 
+def _extract_json(text: str) -> dict:
+    """Extract the first complete JSON object from text.
+
+    Claude often reasons before producing the JSON block, so the response
+    may contain prose before or after the object. This finds the outermost
+    { ... } and parses only that portion.
+
+    Raises:
+        json.JSONDecodeError: If no valid JSON object can be found.
+    """
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        raise json.JSONDecodeError("No JSON object found in response", text, 0)
+    return json.loads(text[start : end + 1])
+
+
 def adjudicate(
     client: Any,
     system_prompt: str,
@@ -116,13 +133,7 @@ def adjudicate(
             messages=[{"role": "user", "content": user_prompt}],
         )
         text = response.content[0].text.strip()
-        # Strip markdown fences if present
-        if text.startswith("```"):
-            text = "\n".join(
-                line for line in text.splitlines()
-                if not line.startswith("```")
-            ).strip()
-        data = json.loads(text)
+        data = _extract_json(text)
         verdict = Stage2Verdict.model_validate(data)
         logger.info(
             "Stage 2 verdict: %s (confidence=%.2f).",

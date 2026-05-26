@@ -61,6 +61,22 @@ an alternative explanation. Return ONLY a valid JSON object:
 }}"""
 
 
+def _extract_json(text: str) -> dict:
+    """Extract the first complete JSON object from text.
+
+    The adversarial prompt may produce prose before the JSON block.
+    This finds the outermost { ... } and parses only that portion.
+
+    Raises:
+        json.JSONDecodeError: If no valid JSON object can be found.
+    """
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        raise json.JSONDecodeError("No JSON object found in response", text, 0)
+    return json.loads(text[start : end + 1])
+
+
 def challenge(
     client: Any,
     system_prompt: str,
@@ -91,12 +107,7 @@ def challenge(
             messages=[{"role": "user", "content": user_prompt}],
         )
         text = response.content[0].text.strip()
-        if text.startswith("```"):
-            text = "\n".join(
-                line for line in text.splitlines()
-                if not line.startswith("```")
-            ).strip()
-        data = json.loads(text)
+        data = _extract_json(text)
         verdict = AdversarialVerdict.model_validate(data)
         logger.info(
             "Adversarial verdict: %s (confidence=%.2f).",
