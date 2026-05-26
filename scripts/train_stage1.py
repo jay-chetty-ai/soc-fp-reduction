@@ -22,6 +22,7 @@ from src.data.features import (
 )
 from src.data.loader import load_dataset, validate_schema
 from src.models.classifier import evaluate, predict_proba, save_model, split_for_calibration, train, tune
+from src.models.conformal import fit_conformal, save_conformal, compute_coverage
 from src.models.explainer import build_explainer, explain_batch
 
 logging.basicConfig(
@@ -122,6 +123,15 @@ def main() -> None:
     model_path = Path(config["stage1"]["model_artifact_path"])
     logger.info("Saving model to %s...", model_path)
     save_model(model, model_path)
+
+    logger.info("Fitting conformal predictor on calibration holdout (%d rows)...", len(X_cal))
+    conformal = fit_conformal(model, X_cal, y_cal, alpha=config["conformal"]["alpha"])
+    coverage = compute_coverage(conformal, X_test, y_test)
+    logger.info("Conformal empirical coverage on test set: %.4f (target >= %.2f)", coverage, 1 - config["conformal"]["alpha"])
+
+    conformal_path = Path(config["conformal"]["artifact_path"])
+    logger.info("Saving conformal predictor to %s...", conformal_path)
+    save_conformal(conformal, conformal_path)
 
     logger.info("Generating SHAP explanations on test set sample (100 rows)...")
     explainer = build_explainer(model)

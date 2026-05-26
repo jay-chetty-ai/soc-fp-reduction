@@ -1,7 +1,9 @@
 """Conformal prediction and three-band alert routing."""
 
 import logging
-from typing import Any
+import pickle
+from pathlib import Path
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -15,7 +17,10 @@ except ImportError:  # pragma: no cover
     lgb = None  # type: ignore[assignment]
     _LGB_BOOSTER_TYPE = None  # type: ignore[assignment]
 
+from src.models.integrity import save_hash, verify_hash
+
 logger = logging.getLogger(__name__)
+_CHECKSUMS_FILENAME = "checksums.json"
 
 
 class _BoosterWrapper:
@@ -145,3 +150,53 @@ def predict_bands(
         dist,
     )
     return series
+
+
+def save_conformal(
+    conformal: SplitConformalClassifier,
+    path: Path,
+    checksums_path: Optional[Path] = None,
+) -> None:
+    """Pickle the conformal predictor and record its SHA-256 hash.
+
+    Uses the same checksums.json as save_model so all artifact hashes live in
+    one file per models/ directory.
+
+    Args:
+        conformal: Fitted SplitConformalClassifier from fit_conformal().
+        path: Output path for the pickled predictor.
+        checksums_path: Path for checksums.json (defaults to path.parent/checksums.json).
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as f:
+        pickle.dump(conformal, f)
+    cs_path = Path(checksums_path) if checksums_path else path.parent / _CHECKSUMS_FILENAME
+    save_hash(path, cs_path)
+    logger.info("Conformal predictor saved to %s.", path)
+
+
+def load_conformal(
+    path: Path,
+    checksums_path: Optional[Path] = None,
+) -> SplitConformalClassifier:
+    """Load and integrity-verify a pickled conformal predictor.
+
+    Args:
+        path: Path to the pickled conformal predictor.
+        checksums_path: Path for checksums.json (defaults to path.parent/checksums.json).
+
+    Returns:
+        Loaded SplitConformalClassifier.
+
+    Raises:
+        ModelIntegrityError: If the file hash does not match the stored hash.
+        FileNotFoundError: If checksums.json is absent.
+    """
+    path = Path(path)
+    cs_path = Path(checksums_path) if checksums_path else path.parent / _CHECKSUMS_FILENAME
+    verify_hash(path, cs_path)
+    with open(path, "rb") as f:
+        conformal: SplitConformalClassifier = pickle.load(f)
+    logger.info("Conformal predictor loaded from %s (integrity verified).", path)
+    return conformal

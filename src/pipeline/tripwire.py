@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -20,18 +22,48 @@ class AutoFPRecord(BaseModel):
 
 
 class TripwireStore:
-    """In-memory store of auto-closed FP alert records.
+    """Store of auto-closed FP alert records with optional file persistence.
 
-    In production this would be backed by a database. For the POC it keeps
-    records in a list and supports JSON serialisation to disk.
+    Records are kept in memory and, when a path is given, appended to a JSON
+    Lines file on disk so they survive process restarts. Each line is a JSON
+    object matching the AutoFPRecord schema.
+
+    Args:
+        path: Optional path to the JSON Lines persistence file. If None the
+              store is in-memory only (suitable for tests).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, path: Path | None = None) -> None:
         self._records: list[AutoFPRecord] = []
+        self._path = Path(path) if path is not None else None
+        if self._path is not None:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._load_from_disk()
 
-    def record(self, record: AutoFPRecord) -> None:
-        """Add an auto-FP record to the store."""
-        self._records.append(record)
+    def _load_from_disk(self) -> None:
+        """Read any existing records from the persistence file on startup."""
+        if self._path is None or not self._path.exists():
+            return
+        loaded = 0
+        with open(self._path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    self._records.append(AutoFPRecord.model_validate_json(line))
+                    loaded += 1
+                except Exception as exc:
+                    logger.warning("Skipping malformed tripwire record: %s", exc)
+        if loaded:
+            logger.info("Tripwire: loaded %d existing records from %s.", loaded, self._path)
+
+    def record(self, rec: AutoFPRecord) -> None:
+        """Add a record to the store and persist it to disk if a path is configured."""
+        self._records.append(rec)
+        if self._path is not None:
+            with open(self._path, "a") as f:
+                f.write(rec.model_dump_json() + "\n")
 
     def all_records(self) -> list[AutoFPRecord]:
         """Return all stored records (oldest first)."""
@@ -53,8 +85,8 @@ def record_auto_fp(
         timestamp: Override the closed_at timestamp (defaults to UTC now).
     """
     ts = timestamp or datetime.now(tz=timezone.utc)
-    record = AutoFPRecord(alert_id=alert_id, alert_fields=alert_fields, closed_at=ts)
-    store.record(record)
+    rec = AutoFPRecord(alert_id=alert_id, alert_fields=alert_fields, closed_at=ts)
+    store.record(rec)
     logger.debug("Tripwire: recorded auto-FP alert %s at %s.", alert_id, ts)
 
 

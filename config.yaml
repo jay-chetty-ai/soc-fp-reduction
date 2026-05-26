@@ -33,6 +33,7 @@ conformal:
   alpha: 0.05
   auto_fp_threshold: 0.05
   auto_tp_threshold: 0.85
+  artifact_path: models/conformal.pkl
 
 # Stage 2: LLM Adjudication
 stage2:
@@ -47,6 +48,7 @@ rag:
   embedding_dim: 384
   top_k: 5
   faiss_index_path: models/faiss_index.bin
+  training_df_path: models/training_df.parquet
   device: auto  # auto = CUDA if available, else CPU
 
 # GPU
