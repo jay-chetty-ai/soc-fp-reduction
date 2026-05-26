@@ -79,6 +79,7 @@ def _make_convergence_callback(config: dict[str, Any]):
     delta: float = config["tuning"]["convergence_delta"]
 
     def callback(study: optuna.Study, trial: optuna.Trial) -> None:
+        """Stop the study when best PR-AUC has not improved within patience window."""
         completed = [t for t in study.trials if t.value is not None]
         if len(completed) < patience:
             return
@@ -125,6 +126,7 @@ def tune(
     best_iterations_by_trial: dict[int, list[int]] = {}
 
     def objective(trial: optuna.Trial) -> float:
+        """Run one Optuna trial: k-fold CV with early stopping, return mean PR-AUC."""
         params = _build_lgb_params(trial, config)
         fold_scores: list[float] = []
         fold_iterations: list[int] = []

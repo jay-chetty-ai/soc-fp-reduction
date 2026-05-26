@@ -12,6 +12,7 @@ class RedactionFilter(logging.Filter):
     """Logging filter that redacts Anthropic API keys from log records."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Redact API key patterns from the log record message before emission."""
         record.msg = redact_secrets(str(record.msg))
         if record.args:
             if isinstance(record.args, tuple):

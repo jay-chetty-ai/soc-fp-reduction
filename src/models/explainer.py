@@ -1,6 +1,7 @@
 """SHAP TreeExplainer for LightGBM model explanations."""
 
 import logging
+import warnings
 from typing import Any
 
 import lightgbm as lgb
@@ -39,7 +40,15 @@ def explain_batch(
     Returns:
         ndarray of shape (n_samples, n_features).
     """
-    raw = explainer.shap_values(X)
+    # SHAP 0.46+ emits a cosmetic warning about output format changes for LightGBM
+    # binary classifiers. The code handles both list and ndarray outputs correctly.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="LightGBM binary classifier with TreeExplainer",
+            category=UserWarning,
+        )
+        raw = explainer.shap_values(X)
     # LightGBM binary classification may return a list [neg_class, pos_class]
     # in some SHAP versions; take the positive class values.
     if isinstance(raw, list):
