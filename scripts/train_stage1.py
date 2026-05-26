@@ -69,8 +69,9 @@ def main() -> None:
     df = clean_features(df)
     df = add_temporal_features(df)
 
-    logger.info("Splitting train/test (temporal hold-out: day 5 = test)...")
-    train_df, test_df = temporal_train_test_split(df, test_day=5)
+    test_day = config["data"]["test_day"]
+    logger.info("Splitting train/test (temporal hold-out: day %d = test)...", test_day)
+    train_df, test_df = temporal_train_test_split(df, test_day=test_day)
 
     feat_cols = get_feature_columns(train_df)
     X_train = train_df[feat_cols]

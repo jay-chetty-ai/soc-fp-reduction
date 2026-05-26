@@ -116,6 +116,7 @@ def challenge(
 def reconcile(
     stage2: Stage2Verdict,
     adversarial: AdversarialVerdict | None,
+    confidence_threshold: float = _CONFIDENCE_THRESHOLD_HIGH,
 ) -> FinalVerdict:
     """Reconcile Stage 2 and adversarial verdicts into a final disposition.
 
@@ -128,6 +129,8 @@ def reconcile(
     Args:
         stage2: Stage 2 LLM verdict.
         adversarial: Adversarial agent verdict; None if the call failed.
+        confidence_threshold: Stage 2 confidence above which Stage 2 wins on
+            disagreement. Read from config["adversarial"]["confidence_threshold_high"].
 
     Returns:
         FinalVerdict with reconciled disposition.
@@ -154,12 +157,12 @@ def reconcile(
         )
 
     # Disagreement case
-    if stage2.confidence > _CONFIDENCE_THRESHOLD_HIGH:
+    if stage2.confidence > confidence_threshold:
         note = (
             f"Disagreement: Stage 2 says {stage2.verdict} "
             f"(confidence={stage2.confidence:.2f}) vs adversarial {adversarial.counter_verdict} "
             f"(confidence={adversarial.confidence:.2f}). "
-            f"Stage 2 confidence exceeds {_CONFIDENCE_THRESHOLD_HIGH:.2f} threshold; Stage 2 wins."
+            f"Stage 2 confidence exceeds {confidence_threshold:.2f} threshold; Stage 2 wins."
         )
         logger.info(note)
         return FinalVerdict(

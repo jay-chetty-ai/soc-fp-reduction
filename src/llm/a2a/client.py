@@ -86,6 +86,7 @@ class A2AClient:
             "ml_score": task_input.ml_score,
             "client": self._client,
             "config": self.config,
+            "max_retries": self.config.get("agents", {}).get("max_retries", 2),
         }
         result = adjudicator_graph.invoke(state)
         verdict: Stage2Verdict = result["verdict"]

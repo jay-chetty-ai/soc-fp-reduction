@@ -73,8 +73,9 @@ def main() -> None:
     df = clean_features(df)
     df = add_temporal_features(df)
 
-    logger.info("Applying temporal split (days 1-4 = training)...")
-    train_df, _ = temporal_train_test_split(df, test_day=5)
+    test_day = config["data"]["test_day"]
+    logger.info("Applying temporal split (days 1-%d = training, day %d = test)...", test_day - 1, test_day)
+    train_df, _ = temporal_train_test_split(df, test_day=test_day)
     logger.info("Training set: %d rows.", len(train_df))
 
     if args.sample_size is not None and args.sample_size < len(train_df):
@@ -95,9 +96,10 @@ def main() -> None:
     logger.info("Loading embedding model '%s' (device=%s)...", embedding_model_name, device)
     embedding_model = load_embedding_model(embedding_model_name, device=device)
 
-    logger.info("Embedding %d training alerts...", len(train_df))
+    batch_size = config["rag"].get("embedding_batch_size", 64)
+    logger.info("Embedding %d training alerts (batch_size=%d)...", len(train_df), batch_size)
     texts = [alert_to_text(row) for _, row in train_df.iterrows()]
-    embeddings = embed_alerts(embedding_model, texts)
+    embeddings = embed_alerts(embedding_model, texts, batch_size=batch_size)
     logger.info("Embeddings shape: %s dtype=%s", embeddings.shape, embeddings.dtype)
 
     logger.info("Building FAISS index...")

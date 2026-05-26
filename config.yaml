@@ -1,11 +1,12 @@
 # SOC False Positive Reduction POC - Configuration
 
-# Data paths
+# Data paths and split
 data:
   raw_dir: data/raw
   processed_dir: data/processed
   fixtures_dir: data/fixtures
   fixture_size: 10000
+  test_day: 5                    # CICIDS2017 day used as temporal hold-out (Friday)
 
 # Stage 1: ML Classifier
 stage1:
@@ -13,6 +14,7 @@ stage1:
   is_unbalance: true
   early_stopping_rounds: 50
   model_artifact_path: models/stage1_model.pkl
+  shap_top_k: 5                  # number of top SHAP features to include in Stage 2 prompts
 
 # Hyperparameter tuning (Optuna TPE)
 tuning:
@@ -49,7 +51,8 @@ rag:
   top_k: 5
   faiss_index_path: models/faiss_index.bin
   training_df_path: models/training_df.parquet
-  device: auto  # auto = CUDA if available, else CPU
+  embedding_batch_size: 64       # batch size for SentenceTransformer encode()
+  device: auto                   # auto = CUDA if available, else CPU
 
 # GPU
 gpu:
@@ -66,6 +69,7 @@ adversarial:
   model: claude-sonnet-4-20250514
   max_tokens: 2048
   temperature: 0.3
+  confidence_threshold_high: 0.80  # Stage 2 confidence above which Stage 2 wins on disagreement
 
 # Tripwire
 tripwire:

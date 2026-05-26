@@ -77,19 +77,21 @@ def alert_to_text(alert: pd.Series) -> str:
     return "Network flow alert: " + ", ".join(parts)
 
 
-def embed_alerts(model, texts: list[str]) -> np.ndarray:
+def embed_alerts(model, texts: list[str], batch_size: int = 64) -> np.ndarray:
     """Embed a list of alert text strings.
 
     Args:
         model: Loaded SentenceTransformer instance.
         texts: List of alert text representations.
+        batch_size: Number of texts per encoding batch. Set from
+            config["rag"]["embedding_batch_size"] when embedding large corpora.
 
     Returns:
         Float32 array of shape (len(texts), embedding_dim).
     """
     embeddings = model.encode(
         texts,
-        batch_size=64,
+        batch_size=batch_size,
         show_progress_bar=False,
         normalize_embeddings=True,
     )

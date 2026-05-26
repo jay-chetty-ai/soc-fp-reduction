@@ -121,7 +121,8 @@ def run_batch(
 
         # Uncertain band: Stage 2 LLM adjudication
         shap_row = shap_values[i]
-        top5 = top_k_features(shap_row, feat_cols, row[feat_cols].values, k=5)
+        shap_top_k = config.get("stage1", {}).get("shap_top_k", 5)
+        top5 = top_k_features(shap_row, feat_cols, row[feat_cols].values, k=shap_top_k)
 
         # RAG: retrieve similar historical alerts
         alert_text = alert_to_text(row)
@@ -168,7 +169,8 @@ def run_batch(
             config,
         )
 
-        final = reconcile(stage2, adv)
+        confidence_threshold = config.get("adversarial", {}).get("confidence_threshold_high", 0.80)
+        final = reconcile(stage2, adv, confidence_threshold=confidence_threshold)
 
         records.append(DispositionRecord(
             alert_id=alert_id,

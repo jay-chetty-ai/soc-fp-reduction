@@ -208,12 +208,13 @@ def main() -> None:
         df = clean_features(df)
         df = add_temporal_features(df)
     else:
-        logger.info("No --input given; loading full dataset and using day-5 hold-out...")
+        test_day = config["data"]["test_day"]
+        logger.info("No --input given; loading full dataset and using day-%d hold-out...", test_day)
         raw_df = load_dataset(config)
         validate_schema(raw_df)
         raw_df = clean_features(raw_df)
         raw_df = add_temporal_features(raw_df)
-        _, df = temporal_train_test_split(raw_df, test_day=5)
+        _, df = temporal_train_test_split(raw_df, test_day=test_day)
         logger.info("Day-5 hold-out: %d rows.", len(df))
 
     if args.max_alerts is not None and args.max_alerts < len(df):
