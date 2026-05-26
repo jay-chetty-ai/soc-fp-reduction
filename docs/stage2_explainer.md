@@ -229,6 +229,46 @@ DispositionRecord: final_verdict, final_confidence, reconciliation_note,
 
 ---
 
+## Evaluation: cross-checking final verdicts against ground truth
+
+When the input dataset contains a `Label` column (as `fixture_10k.csv` does), the pipeline automatically cross-checks every final verdict against the ground truth and computes evaluation metrics.
+
+### How the labels flow through
+
+`orchestrator.py` reads the `Label` column and encodes it to binary: `BENIGN=0`, any attack class`=1`. Each `DispositionRecord` carries a `true_label` field (0 or 1). The results parquet written by `run_pipeline.py` contains both `true_label` and `final_verdict` columns side by side, so per-alert correctness can be inspected directly.
+
+### How `_compute_metrics()` cross-checks
+
+`run_pipeline.py: _compute_metrics()` maps each final verdict to a predicted label:
+
+```python
+y_pred = 1 if r.final_verdict == "true_positive" else 0
+```
+
+This covers all three bands together:
+- `auto_fp` → `final_verdict="false_positive"` → y_pred=0
+- `auto_tp` → `final_verdict="true_positive"` → y_pred=1
+- `uncertain` → `final_verdict=stage2 verdict` → y_pred=1 if "true_positive", 0 otherwise
+
+From `y_true` (ground truth) and `y_pred` (pipeline decision), it computes precision, recall, F1, confusion matrix, and the PR-AUC from the raw ML score. All values land in `metrics/evaluation_<timestamp>.json`.
+
+### The `needs_review` nuance
+
+`needs_review` verdicts are mapped to `y_pred=0` (predicted negative). This is intentionally conservative: the system refused to commit, so it does not claim TP. The consequence is that any true attack that ends up `needs_review` -- because Stage 2 and the adversarial agent disagreed at low confidence, or because the Anthropic client was unavailable -- counts as a false negative in recall.
+
+This means:
+- **Recall** will look worse than the ML model's raw ranking quality (PR-AUC), especially if Stage 2 frequently returns `needs_review`.
+- **PR-AUC** (computed from `ml_score`, not `final_verdict`) is the more honest measure of discriminative power.
+- The `needs_review` rate in the metrics tells you how often the two-agent system deferred rather than deciding.
+
+In practice, a high `needs_review` rate on the uncertain band is expected on out-of-distribution attack types (like Friday DDoS/PortScan on a Mon-Thu-trained model) because both agents will hedge when the alert doesn't match anything in the RAG index.
+
+### What the dashboard shows
+
+The dashboard reads the results parquet and has both `true_label` and `final_verdict` per alert. You can filter to misclassifications (e.g. `true_label=1` but `final_verdict="false_positive"`) to review specific errors. The metrics page displays the confusion matrix and PR curve from the evaluation JSON.
+
+---
+
 ## What the system does NOT do
 
 - **It does not learn.** Each pipeline run is stateless. The LLM does not update based on analyst feedback. The RAG index does not grow automatically. Both require manual retraining or re-indexing to incorporate new data.
