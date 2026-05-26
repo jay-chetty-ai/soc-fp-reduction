@@ -11,10 +11,22 @@ data:
 stage1:
   model_type: lightgbm  # lightgbm or xgboost
   is_unbalance: true
-  n_estimators: 500
   early_stopping_rounds: 50
-  cv_folds: 5
   model_artifact_path: models/stage1_model.pkl
+
+# Hyperparameter tuning (Optuna TPE)
+tuning:
+  n_trials: 50
+  cv_folds: 5
+  calibration_split: 0.2        # fraction of training data held out for conformal calibration
+  # Convergence stopping: halt if best PR-AUC has not improved by convergence_delta
+  # in the last convergence_patience consecutive trials
+  convergence_patience: 20
+  convergence_delta: 0.001
+  # Upper ceiling for n_estimators; actual count set per-trial by early stopping
+  n_estimators_ceiling: 2000
+  optuna_study_name: stage1_lgbm_tuning
+  optuna_storage: null           # null = in-memory; set to sqlite:///models/optuna.db to persist
 
 # Conformal Prediction
 conformal:
@@ -56,6 +68,26 @@ adversarial:
 # Tripwire
 tripwire:
   lookback_days: 7
+
+# LangGraph agent settings
+agents:
+  max_retries: 3
+  retry_base_delay_seconds: 1.0
+  retry_max_delay_seconds: 30.0
+
+# A2A agent servers (local HTTP endpoints)
+a2a:
+  adjudicator:
+    host: localhost
+    port: 8001
+    card_path: /.well-known/agent.json
+  adversarial:
+    host: localhost
+    port: 8002
+    card_path: /.well-known/agent.json
+  timeout_seconds: 30
+  # Set to "inprocess" for testing/single-process mode, "http" for separate server processes
+  mode: inprocess
 
 # Evaluation targets
 targets:

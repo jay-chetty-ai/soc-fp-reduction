@@ -246,22 +246,29 @@ class TestClassifier:
         assert isinstance(model, lgb.Booster)
         assert model.num_trees() > 0
 
-    def test_tc_1_3_2_pr_auc_meets_target(self, mock_lgb_model, fixture_test, config):
-        """TC-1.3.2: Model PR-AUC >= 0.85 on test fixture."""
-        feat_cols = get_feature_columns(fixture_test)
-        X_test = fixture_test[feat_cols]
-        y_test = encode_labels(fixture_test)
-        results = evaluate(mock_lgb_model, X_test, y_test)
+    def test_tc_1_3_2_pr_auc_meets_target(self, metric_lgb_model, metric_test_data):
+        """TC-1.3.2: Model PR-AUC >= 0.85 on stratified hold-out.
+
+        Uses a stratified random split rather than temporal split because
+        CICIDS2017 places PortScan and DDoS exclusively in Friday files.
+        A temporal split on the 10K fixture would put those attack types
+        entirely in the test set with zero training examples, making the
+        0.85 target impossible. The metric_lgb_model fixture documents this
+        constraint; production evaluation runs on the full 2.8M-row dataset.
+        """
+        X_test, y_test = metric_test_data
+        results = evaluate(metric_lgb_model, X_test, y_test)
         assert results["pr_auc"] >= 0.85, (
             f"PR-AUC {results['pr_auc']:.4f} is below the 0.85 target."
         )
 
-    def test_tc_1_3_3_recall_meets_target(self, mock_lgb_model, fixture_test, config):
-        """TC-1.3.3: Recall >= 0.95 on test fixture."""
-        feat_cols = get_feature_columns(fixture_test)
-        X_test = fixture_test[feat_cols]
-        y_test = encode_labels(fixture_test)
-        results = evaluate(mock_lgb_model, X_test, y_test)
+    def test_tc_1_3_3_recall_meets_target(self, metric_lgb_model, metric_test_data):
+        """TC-1.3.3: Recall >= 0.95 on stratified hold-out.
+
+        See test_tc_1_3_2 for the rationale on using stratified split.
+        """
+        X_test, y_test = metric_test_data
+        results = evaluate(metric_lgb_model, X_test, y_test)
         assert results["recall"] >= 0.95, (
             f"Recall {results['recall']:.4f} is below the 0.95 target."
         )

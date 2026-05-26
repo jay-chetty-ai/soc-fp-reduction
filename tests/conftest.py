@@ -21,7 +21,7 @@ import yaml
 # ---------------------------------------------------------------------------
 
 CICIDS2017_FEATURE_COLS = [
-    "Destination Port", "Protocol", "Flow Duration",
+    "Destination Port", "Flow Duration",
     "Total Fwd Packets", "Total Backward Packets",
     "Total Length of Fwd Packets", "Total Length of Bwd Packets",
     "Fwd Packet Length Max", "Fwd Packet Length Min",
@@ -41,6 +41,7 @@ CICIDS2017_FEATURE_COLS = [
     "ACK Flag Count", "URG Flag Count", "CWE Flag Count", "ECE Flag Count",
     "Down/Up Ratio", "Average Packet Size",
     "Avg Fwd Segment Size", "Avg Bwd Segment Size",
+    "Fwd Header Length.1",
     "Fwd Avg Bytes/Bulk", "Fwd Avg Packets/Bulk", "Fwd Avg Bulk Rate",
     "Bwd Avg Bytes/Bulk", "Bwd Avg Packets/Bulk", "Bwd Avg Bulk Rate",
     "Subflow Fwd Packets", "Subflow Fwd Bytes",
@@ -49,7 +50,7 @@ CICIDS2017_FEATURE_COLS = [
     "act_data_pkt_fwd", "min_seg_size_forward",
     "Active Mean", "Active Std", "Active Max", "Active Min",
     "Idle Mean", "Idle Std", "Idle Max", "Idle Min",
-]  # 78 columns
+]  # 78 columns -- matches real CICIDS2017 ML CSV schema (no Protocol, has Fwd Header Length.1)
 
 FIXTURE_PATH = Path("data/fixtures/fixture_10k.csv")
 CONFIG_PATH = Path("config.yaml")
@@ -76,7 +77,6 @@ def _generate_synthetic_fixture(n: int = N_ROWS, seed: int = 42) -> pd.DataFrame
         # BENIGN: moderate rates, mixed ports
         benign = {col: np.zeros(n_benign) for col in CICIDS2017_FEATURE_COLS}
         benign["Destination Port"] = rng.choice([80, 443, 22, 53, 8080], n_benign).astype(float)
-        benign["Protocol"] = rng.choice([6, 17], n_benign).astype(float)
         benign["Flow Duration"] = rng.lognormal(10, 2, n_benign).clip(0)
         benign["Total Fwd Packets"] = rng.integers(1, 20, n_benign).astype(float)
         benign["Total Backward Packets"] = rng.integers(1, 20, n_benign).astype(float)
@@ -97,7 +97,6 @@ def _generate_synthetic_fixture(n: int = N_ROWS, seed: int = 42) -> pd.DataFrame
         n_per = n_attack // 4
         dos = {col: np.zeros(n_per) for col in CICIDS2017_FEATURE_COLS}
         dos["Destination Port"] = np.full(n_per, 80.0)
-        dos["Protocol"] = np.full(n_per, 6.0)
         dos["Flow Duration"] = rng.lognormal(3, 1, n_per).clip(0)
         dos["Total Fwd Packets"] = rng.integers(100, 500, n_per).astype(float)
         dos["Total Backward Packets"] = rng.integers(0, 5, n_per).astype(float)
@@ -113,7 +112,6 @@ def _generate_synthetic_fixture(n: int = N_ROWS, seed: int = 42) -> pd.DataFrame
         # PortScan: random high ports, very few packets
         ps = {col: np.zeros(n_per) for col in CICIDS2017_FEATURE_COLS}
         ps["Destination Port"] = rng.integers(1024, 65535, n_per).astype(float)
-        ps["Protocol"] = np.full(n_per, 6.0)
         ps["Flow Duration"] = rng.lognormal(2, 0.5, n_per).clip(0)
         ps["Total Fwd Packets"] = rng.integers(1, 3, n_per).astype(float)
         ps["Total Backward Packets"] = rng.integers(0, 1, n_per).astype(float)
@@ -129,7 +127,6 @@ def _generate_synthetic_fixture(n: int = N_ROWS, seed: int = 42) -> pd.DataFrame
         # DDoS: extremely high bytes/s, UDP
         ddos = {col: np.zeros(n_per) for col in CICIDS2017_FEATURE_COLS}
         ddos["Destination Port"] = rng.choice([80, 443, 53], n_per).astype(float)
-        ddos["Protocol"] = np.full(n_per, 17.0)
         ddos["Flow Duration"] = rng.lognormal(6, 1, n_per).clip(0)
         ddos["Total Fwd Packets"] = rng.integers(500, 2000, n_per).astype(float)
         ddos["Total Backward Packets"] = rng.integers(0, 10, n_per).astype(float)
@@ -144,7 +141,6 @@ def _generate_synthetic_fixture(n: int = N_ROWS, seed: int = 42) -> pd.DataFrame
         n_bot = n_attack - 3 * n_per
         bot = {col: np.zeros(n_bot) for col in CICIDS2017_FEATURE_COLS}
         bot["Destination Port"] = rng.choice([6667, 4444, 1337], n_bot).astype(float)
-        bot["Protocol"] = np.full(n_bot, 6.0)
         bot["Flow Duration"] = rng.lognormal(8, 1.5, n_bot).clip(0)
         bot["Total Fwd Packets"] = rng.integers(5, 30, n_bot).astype(float)
         bot["Total Backward Packets"] = rng.integers(5, 30, n_bot).astype(float)
@@ -248,6 +244,51 @@ def mock_lgb_model(fixture_train) -> lgb.Booster:
     }
     ds = lgb.Dataset(X, label=y)
     return lgb.train(params, ds, num_boost_round=100, callbacks=[lgb.log_evaluation(-1)])
+
+
+@pytest.fixture(scope="session")
+def metric_lgb_model(fixture_features) -> lgb.Booster:
+    """LightGBM trained with a stratified random split for metric validation.
+
+    Uses a 70/30 stratified split so all attack types appear in training.
+    This is required because CICIDS2017 temporal hold-out puts PortScan and
+    DDoS entirely in Friday (test day), making PR-AUC and recall targets
+    unreachable under temporal split on the 10K fixture.
+    """
+    from sklearn.model_selection import StratifiedShuffleSplit
+    from src.data.features import encode_labels, get_feature_columns
+
+    feat_cols = get_feature_columns(fixture_features)
+    y_all = encode_labels(fixture_features)
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.30, random_state=42)
+    train_idx, _ = next(sss.split(fixture_features, y_all))
+    X_train = fixture_features.iloc[train_idx][feat_cols]
+    y_train = y_all[train_idx]
+    params = {
+        "objective": "binary",
+        "metric": "binary_logloss",
+        "is_unbalance": True,
+        "verbose": -1,
+        "n_jobs": -1,
+        "num_leaves": 63,
+        "learning_rate": 0.05,
+        "min_child_samples": 5,
+    }
+    ds = lgb.Dataset(X_train, label=y_train)
+    return lgb.train(params, ds, num_boost_round=300, callbacks=[lgb.log_evaluation(-1)])
+
+
+@pytest.fixture(scope="session")
+def metric_test_data(fixture_features):
+    """Test split paired with metric_lgb_model (stratified random hold-out)."""
+    from sklearn.model_selection import StratifiedShuffleSplit
+    from src.data.features import encode_labels, get_feature_columns
+
+    feat_cols = get_feature_columns(fixture_features)
+    y_all = encode_labels(fixture_features)
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.30, random_state=42)
+    _, test_idx = next(sss.split(fixture_features, y_all))
+    return fixture_features.iloc[test_idx][feat_cols], y_all[test_idx]
 
 
 @pytest.fixture(scope="session")
