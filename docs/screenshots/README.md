@@ -7,7 +7,7 @@ Filenames will be updated once captures are provided.
 
 ## 01 -- Alert List Overview
 
-**File:** `01_alert_list_overview.png`
+**File:** `01_alert_list_overview.jpeg`
 
 Main alert list with the full 10K fixture results loaded, band filter set to "All".
 Shows the three-band routing distribution (auto_fp / uncertain / auto_tp), final verdict
@@ -18,7 +18,7 @@ Demonstrates the scale at which the pipeline operates without analyst interventi
 
 ## 02 -- Metrics Summary
 
-**File:** `02_metrics_summary.png`
+**File:** `02_metrics_summary.jpeg`
 
 Metrics page showing the confusion matrix, PR-AUC curve, and band distribution pie chart.
 Quantitative proof of system performance. The PR-AUC curve is computed from the raw
@@ -29,7 +29,7 @@ matrix reflects final pipeline decisions including Stage 2 verdicts.
 
 ## 03a -- Uncertain Alert: Top Half
 
-**File:** `03a_uncertain_alert_top.png`
+**File:** `03a_uncertain_alert_top.jpeg`
 
 Detail view of an uncertain-band alert where the adversarial agent disagreed with Stage 2
 but Stage 2 won on confidence. Top half shows the alert feature values (redacted per S6
@@ -40,7 +40,7 @@ confidence score and full natural language rationale.
 
 ## 03b -- Uncertain Alert: Bottom Half
 
-**File:** `03b_uncertain_alert_bottom.png`
+**File:** `03b_uncertain_alert_bottom.jpeg`
 
 Continuation of the same uncertain alert detail view. Shows the adversarial agent's
 counter-argument and the weakest evidence it identified, the RAG similar historical alerts
@@ -51,7 +51,7 @@ explaining which agent's verdict was accepted and why.
 
 ## 04 -- Auto-FP Alert Detail
 
-**File:** `04_auto_fp_alert_detail.png`
+**File:** `04_auto_fp_alert_detail.jpeg`
 
 Detail view of an auto-FP alert (Stage 1 band, no Stage 2 call made). Shows the SHAP
 top-5 explanation for the auto-close decision and the false_positive verdict with no LLM
@@ -62,7 +62,7 @@ the uncertain band -- auto-FP and auto-TP alerts are decided by the ML model alo
 
 ## 05 -- Band Filter: Uncertain Only
 
-**File:** `05_band_filter_uncertain.png`
+**File:** `05_band_filter_uncertain.jpeg`
 
 Alert list with the band filter set to "uncertain". Shows only the alerts that passed
 through Stage 2 LLM adjudication, with their final verdicts, confidence scores, and
@@ -73,7 +73,7 @@ what proportion of alerts required LLM reasoning.
 
 ## 06 -- Analyst Feedback Capture
 
-**File:** `06_feedback_capture.png`
+**File:** `06_feedback_capture.jpeg`
 
 Analyst feedback section on an alert detail view. Shows the override verdict dropdown,
 rationale text box, and submit button. The feedback workflow allows an analyst to correct
@@ -82,8 +82,3 @@ and a timestamp. Role-based access control limits this action to the analyst rol
 
 ---
 
-## How to update this file
-
-When screenshots are provided, verify each filename matches the entry above and update
-any filenames that differ. Reference the three key screenshots (01, 02, 03a) in the
-main README.md dashboard section so they appear in the project overview.
