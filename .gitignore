@@ -15,6 +15,7 @@ models/*
 # Pipeline run outputs (generated artifacts, not source)
 results/*
 !results/.gitkeep
+!results/*.md
 
 # Metrics
 metrics/*
