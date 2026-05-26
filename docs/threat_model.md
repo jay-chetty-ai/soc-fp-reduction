@@ -305,103 +305,39 @@ Raw Alert Data
 
 ---
 
-## 5. Full Project Directory Structure
+## 5. Security Module Reference
 
-Security-relevant files are annotated with their control reference (S1-S8).
+Files that implement a security control, mapped to their control reference.
 
 ```
-soc-fp-reduction/
-├── docs/
-│   ├── architecture.md         # System design and component interfaces
-│   ├── requirements.md         # Functional and non-functional requirements
-│   ├── setup.md                # Environment setup and prerequisites
-│   ├── sprint_backlog.md       # Agile sprint history and story tracking
-│   ├── stage2_explainer.md     # Deep dive: Stage 2, RAG, adversarial, distribution shift
-│   ├── test_plan.md            # Unit, integration, and E2E test specifications
-│   └── threat_model.md         # This file
-│
-├── scripts/
-│   ├── build_rag_index.py      # Embeds training set and builds FAISS index
-│   ├── download_data.py        # Downloads CICIDS2017 from canonical source
-│   ├── install.sh / install.ps1
-│   ├── run_pipeline.py         # End-to-end pipeline entry point
-│   └── train_stage1.py         # Trains LightGBM + conformal predictor
-│
-├── src/
-│   ├── data/
-│   │   ├── features.py         # Feature engineering, cleaning, temporal split
-│   │   └── loader.py           # Dataset loading and schema validation
-│   │
-│   ├── llm/
-│   │   ├── adjudicator.py      # Stage 2: prompt assembly and Claude API call
-│   │   ├── adversarial.py      # Adversarial agent: challenge + reconcile()
-│   │   ├── embeddings.py       # MiniLM-L6-v2 embedding and alert_to_text()
-│   │   ├── rate_limiter.py     # S7: Rate limiting and circuit breaker
-│   │   ├── redactor.py         # S6: Field allowlist, strips sensitive fields before API
-│   │   ├── retrieval.py        # FAISS top-k similarity retrieval
-│   │   ├── sanitizer.py        # S1: Prompt injection sanitization
-│   │   ├── validators.py       # S5: Pydantic schema validation for LLM output
-│   │   │
-│   │   ├── a2a/                # Agent-to-Agent protocol stubs (not active in pipeline)
-│   │   │   ├── agent_cards/
-│   │   │   │   ├── adjudicator.json
-│   │   │   │   └── adversarial.json
-│   │   │   └── client.py
-│   │   │
-│   │   └── graphs/             # LangGraph prototype (not active in pipeline)
-│   │       ├── adjudicator_graph.py
-│   │       └── adversarial_graph.py
-│   │
-│   ├── models/
-│   │   ├── classifier.py       # LightGBM training, predict_proba, save/load
-│   │   ├── conformal.py        # MAPIE conformal predictor, three-band routing
-│   │   ├── explainer.py        # SHAP TreeExplainer, top-k feature extraction
-│   │   └── integrity.py        # S4: SHA-256 artifact hash at save and load
-│   │
-│   ├── pipeline/
-│   │   ├── orchestrator.py     # run_batch(): wires Stage 1 -> conformal -> Stage 2
-│   │   └── tripwire.py         # Retroactive IOC check on auto-closed FP alerts
-│   │
-│   ├── ui/
-│   │   └── dashboard.py        # S8: Streamlit dashboard with auth and role separation
-│   │
-│   └── utils/
-│       ├── audit.py            # S3: Structured JSON audit log with SHA-256 hash chain
-│       └── secrets.py          # S2: .env loading, API key validation, log redaction
-│
-├── tests/
-│   ├── conftest.py             # Shared fixtures: 10K subset, mock Anthropic client
-│   ├── fixtures/               # Canned LLM responses for unit tests
-│   │   ├── adversarial_response.json
-│   │   ├── stage2_response.json
-│   │   └── stage2_response_malformed.json
-│   ├── test_epic1_data.py
-│   ├── test_epic2_llm.py
-│   ├── test_epic3_ui.py
-│   └── test_security.py
-│
-├── data/
-│   └── fixtures/
-│       ├── fixture_10k.csv                    # 10K stratified sample (all 5 days)
-│       └── fixture_10k_in_distribution.csv    # 8,979 rows; DDoS/PortScan/Bot excluded
-│
-├── models/                     # Generated artifacts (gitignored except .gitkeep)
-│   ├── stage1_model.pkl        # Trained LightGBM + checksums.json (S4)
-│   ├── conformal.pkl           # Fitted MAPIE SplitConformalClassifier
-│   ├── faiss_index.bin         # 2.1M-vector FAISS IndexFlatIP
-│   ├── training_df.parquet     # Training set for RAG label lookups
-│   └── tripwire.jsonl          # Append-only auto-FP alert log for IOC re-check
-│
-├── results/                    # Pipeline run outputs (gitignored except .gitkeep)
-├── metrics/                    # Evaluation JSONs per run (gitignored except .gitkeep)
-│
-├── config.yaml                 # All tunable parameters: thresholds, paths, auth config
-├── requirements.txt
-├── research.md                 # Reference research synthesis (May 2026)
-├── roadmap.txt                 # Future enhancement notes (LangGraph, A2A)
-└── CLAUDE.md                   # Project conventions
+src/
+├── llm/
+│   ├── sanitizer.py        # S1: Strips control chars and injection phrases;
+│   │                       #     replaces known injection patterns with [REDACTED_INJECTION]
+│   ├── redactor.py         # S6: Field allowlist; strips IPs and non-network fields
+│   │                       #     before any data crosses the Anthropic API boundary
+│   ├── validators.py       # S5: Pydantic schemas for Stage 2 and adversarial responses;
+│   │                       #     fallback to needs_review on any parse failure
+│   └── rate_limiter.py     # S7: Per-hour/day call caps; circuit breaker on high
+│                           #     uncertain-band rate; exponential backoff with jitter
+├── models/
+│   └── integrity.py        # S4: SHA-256 hash written at save time, verified at every
+│                           #     load; model hash logged in every prediction
+├── pipeline/
+│   └── tripwire.py         # Append-only auto-FP log for retroactive IOC re-check
+└── utils/
+    ├── secrets.py          # S2: .env loading, API key format validation,
+    │                       #     log redaction filter (replaces sk-ant-... with [REDACTED])
+    ├── audit.py            # S3: Structured JSON audit log with SHA-256 hash chain;
+    │                       #     every pipeline decision and analyst override recorded
+    └── dashboard.py → src/ui/dashboard.py
+                            # S8: streamlit-authenticator login; viewer/analyst roles;
+                            #     session timeout; feedback gated to analyst role
 ```
 
-### Notes on inactive modules
+### Inactive modules (no current threat surface)
 
-`src/llm/a2a/` and `src/llm/graphs/` are present in the repository but are not imported or invoked by the active pipeline (`run_pipeline.py` → `orchestrator.py`). They represent prototype work for future A2A protocol support and LangGraph-based multi-agent orchestration. They carry no active threat surface for this POC but should be reviewed before activation -- in particular, the A2A client introduces an additional network trust boundary and the graph state objects introduce new data persistence paths that would need their own threat analysis.
+`src/llm/a2a/` and `src/llm/graphs/` exist in the repo but are not imported by the
+active pipeline. Before activation, both require a threat analysis pass: the A2A client
+introduces a new network trust boundary and the LangGraph state objects introduce new
+data persistence paths not covered by the current audit trail.
