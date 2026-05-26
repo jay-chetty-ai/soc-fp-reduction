@@ -108,3 +108,31 @@ targets:
 logging:
   level: INFO
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Dashboard authentication (S8)
+# Passwords are bcrypt-hashed (rounds=12). Never store plaintext passwords here.
+# Default credentials: analyst / analyst123, viewer / viewer123
+# Change these before deploying to any shared environment.
+auth:
+  credentials:
+    usernames:
+      analyst:
+        name: SOC Analyst
+        password: "$2b$12$6A4bqY27U25LxgjW3fIC7.BJGpd8U90Uoms.JHy0XgEweNt2AX.UW"
+        role: analyst
+      viewer:
+        name: SOC Viewer
+        password: "$2b$12$t1cjpEWI2RO0vN4G4rGlVeqZHI35RqI96PolU07l8NwGE6kWknP3q"
+        role: viewer
+  cookie:
+    name: soc_dashboard_auth
+    key: "soc-fp-reduction-cookie-key-change-in-production"
+    expiry_days: 1
+  session_timeout_minutes: 60
+
+# Dashboard display settings
+dashboard:
+  results_dir: results
+  metrics_dir: metrics
+  feedback_path: data/processed/feedback.jsonl
+  audit_log_path: logs/audit.jsonl

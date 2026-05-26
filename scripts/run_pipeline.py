@@ -11,8 +11,8 @@ Usage examples:
     # Skip Stage 2 LLM calls (dry run; uncertain alerts get needs_review):
     python scripts/run_pipeline.py --no-llm
 
-    # Save full results to CSV:
-    python scripts/run_pipeline.py --output results/run_$(date +%Y%m%d_%H%M%S).csv
+    # Save full results (parquet) and metrics JSON to custom output:
+    python scripts/run_pipeline.py --output results/run_$(date +%Y%m%d_%H%M%S).parquet
 
 Prerequisites (run once before this script):
     python scripts/train_stage1.py        # trains model + conformal predictor
@@ -56,9 +56,93 @@ def _check_artifacts(config: dict) -> list[str]:
     return missing
 
 
-def _print_results(records: list, elapsed: float) -> None:
-    from src.pipeline.orchestrator import DispositionRecord
+def _compute_metrics(records: list, elapsed: float, llm_enabled: bool) -> dict:
+    """Compute evaluation metrics from DispositionRecord list.
 
+    Args:
+        records: List of DispositionRecord objects from run_batch().
+        elapsed: Wall-clock seconds for the pipeline run.
+        llm_enabled: Whether Stage 2 LLM calls were enabled.
+
+    Returns:
+        Metrics dict suitable for JSON serialisation and dashboard consumption.
+    """
+    total = len(records)
+    band_counts: dict[str, int] = {}
+    verdict_counts: dict[str, int] = {}
+    y_true: list[int] = []
+    y_score: list[float] = []
+    y_pred: list[int] = []
+
+    for r in records:
+        band_counts[r.band] = band_counts.get(r.band, 0) + 1
+        verdict_counts[r.final_verdict] = verdict_counts.get(r.final_verdict, 0) + 1
+        if r.true_label is not None:
+            y_true.append(r.true_label)
+            y_score.append(r.ml_score)
+            y_pred.append(1 if r.final_verdict == "true_positive" else 0)
+
+    auto_fp_n = band_counts.get("auto_fp", 0)
+    auto_tp_n = band_counts.get("auto_tp", 0)
+    volume_reduction = (auto_fp_n + auto_tp_n) / total if total > 0 else 0.0
+
+    metrics: dict = {
+        "run_timestamp": datetime.now(timezone.utc).isoformat(),
+        "total_alerts": total,
+        "elapsed_seconds": round(elapsed, 2),
+        "throughput_per_second": round(total / elapsed, 2) if elapsed > 0 else 0.0,
+        "band_counts": band_counts,
+        "band_pct": {k: round(100.0 * v / total, 1) for k, v in band_counts.items()},
+        "verdict_counts": verdict_counts,
+        "volume_reduction": round(volume_reduction, 4),
+        # 7 min median analyst triage time per auto-closed FP alert
+        "analyst_time_saved_hours": round(auto_fp_n * 7 / 60, 1),
+        "llm_enabled": llm_enabled,
+    }
+
+    if y_true:
+        from sklearn.metrics import (
+            average_precision_score,
+            confusion_matrix,
+            f1_score,
+            precision_recall_curve,
+            precision_score,
+            recall_score,
+        )
+
+        y_true_arr = np.array(y_true)
+        y_score_arr = np.array(y_score)
+        y_pred_arr = np.array(y_pred)
+
+        metrics["pr_auc"] = round(
+            float(average_precision_score(y_true_arr, y_score_arr)), 4
+        )
+        metrics["precision"] = round(
+            float(precision_score(y_true_arr, y_pred_arr, zero_division=0)), 4
+        )
+        metrics["recall"] = round(
+            float(recall_score(y_true_arr, y_pred_arr, zero_division=0)), 4
+        )
+        metrics["f1"] = round(
+            float(f1_score(y_true_arr, y_pred_arr, zero_division=0)), 4
+        )
+        metrics["confusion_matrix"] = confusion_matrix(
+            y_true_arr, y_pred_arr
+        ).tolist()
+
+        prec_pts, rec_pts, _ = precision_recall_curve(y_true_arr, y_score_arr)
+        # Decimate to at most 200 points to keep JSON size manageable
+        step = max(1, len(prec_pts) // 200)
+        metrics["pr_curve"] = {
+            "precision": [round(float(v), 4) for v in prec_pts[::step]],
+            "recall": [round(float(v), 4) for v in rec_pts[::step]],
+        }
+
+    return metrics
+
+
+def _print_results(records: list, elapsed: float) -> None:
+    """Print a formatted summary table to stdout."""
     total = len(records)
     verdict_counts: dict[str, int] = {}
     band_counts: dict[str, int] = {}
@@ -108,7 +192,10 @@ def main() -> None:
         "--output",
         default=None,
         metavar="PATH",
-        help="Write per-alert results to this CSV file.",
+        help=(
+            "Write per-alert results to this path. Parquet format recommended "
+            "(preserves list fields). CSV also supported (list fields JSON-encoded)."
+        ),
     )
     parser.add_argument(
         "--no-llm",
@@ -201,7 +288,6 @@ def main() -> None:
         df = pd.read_csv(args.input, low_memory=False)
         df.columns = [c.strip() for c in df.columns]
         if "Timestamp" not in df.columns:
-            # Infer timestamps using the filename (CICIDS2017 ML CSV convention)
             from src.data.loader import _infer_timestamps
             rng = np.random.default_rng(42)
             df["Timestamp"] = _infer_timestamps(Path(args.input).name, len(df), rng)
@@ -226,7 +312,7 @@ def main() -> None:
     # -------------------------------------------------------------------------
     # Tripwire store (persistent)
     # -------------------------------------------------------------------------
-    from src.pipeline.tripwire import TripwireStore
+    from src.pipeline.tripwire import TripwireStore, record_auto_fp
     tripwire_path = Path("models/tripwire.jsonl")
     tripwire_store = TripwireStore(path=tripwire_path)
 
@@ -255,21 +341,47 @@ def main() -> None:
     feat_cols = get_feature_columns(df)
     for i, rec in enumerate(records):
         if rec.band == "auto_fp":
-            from src.pipeline.tripwire import record_auto_fp
             alert_fields = df.iloc[i][feat_cols].to_dict()
             record_auto_fp(rec.alert_id, alert_fields, tripwire_store)
 
     _print_results(records, elapsed)
 
     # -------------------------------------------------------------------------
-    # Write output
+    # Compute and save metrics
     # -------------------------------------------------------------------------
+    metrics = _compute_metrics(records, elapsed, llm_enabled=anthropic_client is not None)
+
+    metrics_dir = Path("metrics")
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    run_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    metrics_path = metrics_dir / f"evaluation_{run_ts}.json"
+    metrics_path.write_text(json.dumps(metrics, indent=2))
+    logger.info("Metrics written to %s.", metrics_path)
+
+    # -------------------------------------------------------------------------
+    # Save pipeline results (always written as parquet to results/)
+    # -------------------------------------------------------------------------
+    results_dir = Path("results")
+    results_dir.mkdir(parents=True, exist_ok=True)
+    results_parquet = results_dir / f"evaluation_{run_ts}.parquet"
+    results_df = pd.DataFrame([r.model_dump() for r in records])
+    results_df.to_parquet(results_parquet, index=False)
+    logger.info("Results parquet written to %s (%d rows).", results_parquet, len(results_df))
+
+    # Optional additional output path (--output flag)
     if args.output is not None:
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        results_df = pd.DataFrame([r.model_dump() for r in records])
-        results_df.to_csv(out_path, index=False)
-        logger.info("Results written to %s.", out_path)
+        if out_path.suffix.lower() == ".parquet":
+            results_df.to_parquet(out_path, index=False)
+        else:
+            # CSV: JSON-encode list fields so they survive round-trips
+            csv_df = results_df.copy()
+            for col in ("shap_top5", "similar_alerts", "recommended_actions"):
+                if col in csv_df.columns:
+                    csv_df[col] = csv_df[col].apply(json.dumps)
+            csv_df.to_csv(out_path, index=False)
+        logger.info("Results also written to %s.", out_path)
 
 
 if __name__ == "__main__":
