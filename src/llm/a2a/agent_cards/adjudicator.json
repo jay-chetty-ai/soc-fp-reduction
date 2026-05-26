@@ -1,0 +1,27 @@
+{
+  "name": "SOC Alert Adjudicator",
+  "url": "http://localhost:8100/adjudicator",
+  "version": "1.0.0",
+  "description": "Stage 2 LLM adjudication agent for SOC alert triage. Accepts uncertain-band alerts from Stage 1 and returns structured true_positive/false_positive/needs_review verdicts with rationale.",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "stateTransitionHistory": false
+  },
+  "skills": [
+    {
+      "id": "triage_alert",
+      "name": "Triage Alert",
+      "description": "Adjudicate a single network security alert using LLM reasoning over SHAP features and historical precedents.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"],
+      "parameters": {
+        "alert_id": {"type": "string", "required": true},
+        "alert_fields": {"type": "object", "required": true},
+        "shap_top5": {"type": "array", "required": true},
+        "similar_alerts": {"type": "array", "required": true},
+        "ml_score": {"type": "number", "required": true}
+      }
+    }
+  ]
+}

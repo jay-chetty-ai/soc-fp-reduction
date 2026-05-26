@@ -1,0 +1,28 @@
+{
+  "name": "SOC Adversarial Validator",
+  "url": "http://localhost:8101/adversarial",
+  "version": "1.0.0",
+  "description": "Adversarial validation agent that challenges Stage 2 verdicts. Implements Cloudflare Project Glasswing-inspired multi-agent harness for bias reduction in LLM triage decisions.",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "stateTransitionHistory": false
+  },
+  "skills": [
+    {
+      "id": "challenge_verdict",
+      "name": "Challenge Verdict",
+      "description": "Challenge a Stage 2 adjudication verdict by arguing the opposing case and identifying the weakest evidence.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"],
+      "parameters": {
+        "alert_id": {"type": "string", "required": true},
+        "initial_verdict": {"type": "object", "required": true},
+        "alert_fields": {"type": "object", "required": true},
+        "shap_top5": {"type": "array", "required": true},
+        "similar_alerts": {"type": "array", "required": true},
+        "ml_score": {"type": "number", "required": true}
+      }
+    }
+  ]
+}

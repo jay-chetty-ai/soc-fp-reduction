@@ -292,6 +292,51 @@ def metric_test_data(fixture_features):
 
 
 @pytest.fixture(scope="session")
+def metric_cal_data(fixture_features):
+    """Calibration split for conformal predictor (from metric_lgb_model's training set).
+
+    Uses 20% of the 70% metric training portion, kept separate from the 30% test
+    split.  All attack types are represented because metric_lgb_model uses a
+    stratified random split.
+    """
+    from sklearn.model_selection import StratifiedShuffleSplit
+    from src.data.features import encode_labels, get_feature_columns
+
+    feat_cols = get_feature_columns(fixture_features)
+    y_all = encode_labels(fixture_features)
+
+    # Reproduce the metric_lgb_model train indices (random_state=42, test_size=0.30)
+    sss_outer = StratifiedShuffleSplit(n_splits=1, test_size=0.30, random_state=42)
+    train_idx, _ = next(sss_outer.split(fixture_features, y_all))
+    X_full_train = fixture_features.iloc[train_idx][feat_cols]
+    y_full_train = y_all[train_idx]
+
+    # Hold out 20% of the training set as calibration data
+    sss_cal = StratifiedShuffleSplit(n_splits=1, test_size=0.20, random_state=0)
+    _, cal_idx = next(sss_cal.split(X_full_train, y_full_train))
+    return X_full_train.iloc[cal_idx], y_full_train.iloc[cal_idx]
+
+
+@pytest.fixture(scope="session")
+def mock_conformal(metric_lgb_model, metric_cal_data, config):
+    """SplitConformalClassifier fitted on metric_lgb_model's calibration split.
+
+    Uses metric_lgb_model (stratified training) rather than mock_lgb_model
+    (temporal split) so that all attack types are in calibration, making
+    coverage and FN-rate tests meaningful.
+    """
+    from src.models.conformal import fit_conformal
+
+    X_cal, y_cal = metric_cal_data
+    return fit_conformal(
+        metric_lgb_model,
+        X_cal,
+        y_cal,
+        alpha=config["conformal"]["alpha"],
+    )
+
+
+@pytest.fixture(scope="session")
 def mock_shap_values(mock_lgb_model, fixture_test) -> np.ndarray:
     """Pre-computed SHAP values for mock_lgb_model on first 50 rows of fixture_test."""
     from src.data.features import get_feature_columns
@@ -305,6 +350,32 @@ def mock_shap_values(mock_lgb_model, fixture_test) -> np.ndarray:
 @pytest.fixture(scope="session")
 def sample_uncertain_alert(fixture_test) -> pd.Series:
     return fixture_test.iloc[0]
+
+
+@pytest.fixture(scope="session")
+def embedding_model(config):
+    """Loaded sentence-transformer; session-scoped to avoid repeated downloads."""
+    from src.llm.embeddings import load_embedding_model
+    return load_embedding_model(
+        config["rag"]["embedding_model"],
+        device="cpu",  # force CPU in tests for reproducibility
+    )
+
+
+@pytest.fixture(scope="session")
+def fixture_train_embeddings(fixture_train, embedding_model) -> np.ndarray:
+    """Float32 embeddings for the first 100 rows of fixture_train."""
+    from src.llm.embeddings import alert_to_text, embed_alerts
+    sample = fixture_train.head(100)
+    texts = [alert_to_text(row) for _, row in sample.iterrows()]
+    return embed_alerts(embedding_model, texts)
+
+
+@pytest.fixture(scope="session")
+def faiss_index(fixture_train_embeddings):
+    """In-memory FAISS index built from fixture_train_embeddings."""
+    from src.llm.retrieval import build_index
+    return build_index(fixture_train_embeddings)
 
 
 @pytest.fixture
@@ -327,3 +398,38 @@ def mock_stage2_response() -> dict:
 def mock_adversarial_response() -> dict:
     with open("tests/fixtures/adversarial_response.json") as f:
         return json.load(f)
+
+
+@pytest.fixture
+def mock_anthropic_client(mock_stage2_response):
+    """Mock Anthropic client (function-scoped) for unit tests."""
+    import json
+    from unittest.mock import MagicMock
+
+    client = MagicMock()
+    message = MagicMock()
+    message.content = [MagicMock(text=json.dumps(mock_stage2_response))]
+    client.messages.create.return_value = message
+    return client
+
+
+@pytest.fixture(scope="session")
+def session_mock_anthropic_client():
+    """Session-scoped mock Anthropic client for pipeline integration tests."""
+    import json
+    from unittest.mock import MagicMock
+    from pathlib import Path
+
+    response = json.loads(Path("tests/fixtures/stage2_response.json").read_text())
+    client = MagicMock()
+    client.messages.create.return_value.content = [MagicMock(text=json.dumps(response))]
+    return client
+
+
+@pytest.fixture
+def mock_similar_alerts() -> list[dict]:
+    """Five mock similar historical alerts for prompt building."""
+    return [
+        {"alert_id": f"hist_{i:03d}", "label": "BENIGN" if i % 2 == 0 else "DoS Hulk", "similarity": 0.9 - i * 0.05}
+        for i in range(5)
+    ]
