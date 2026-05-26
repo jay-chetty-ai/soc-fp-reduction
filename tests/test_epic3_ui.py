@@ -180,65 +180,79 @@ class TestDispositionRecord:
 # ---------------------------------------------------------------------------
 
 class TestDataLoading:
-    """Verify load_latest_results and load_latest_metrics."""
-
-    def test_load_results_empty_dir_returns_none(self, tmp_path):
-        """TC-3.1.1a: Empty results directory returns None."""
-        from src.ui.dashboard import load_latest_results
-        assert load_latest_results(tmp_path) is None
-
-    def test_load_results_no_parquet_files_returns_none(self, tmp_path):
-        """TC-3.1.1b: Directory with non-parquet files returns None."""
-        from src.ui.dashboard import load_latest_results
-        (tmp_path / "other.csv").write_text("a,b\n1,2")
-        assert load_latest_results(tmp_path) is None
+    """Verify load_results, load_metrics, and list_available_runs."""
 
     def test_load_results_valid_parquet(self, tmp_path, sample_results_df):
-        """TC-3.1.1c: Valid parquet file loads correctly."""
-        from src.ui.dashboard import load_latest_results
+        """TC-3.1.1a: Valid parquet file loads correctly."""
+        from src.ui.dashboard import load_results
         path = tmp_path / "evaluation_20260525_143211.parquet"
         sample_results_df.to_parquet(path, index=False)
-        result = load_latest_results(tmp_path)
+        result = load_results(path)
         assert result is not None
         assert len(result) == len(sample_results_df)
         assert "alert_id" in result.columns
 
-    def test_load_results_picks_most_recent(self, tmp_path, sample_results_df):
-        """TC-3.1.1d: When multiple files exist, the most recent (lexicographically last) is returned."""
-        from src.ui.dashboard import load_latest_results
-        for ts in ["20260524_120000", "20260525_143211"]:
-            sample_results_df.to_parquet(tmp_path / f"evaluation_{ts}.parquet", index=False)
-        result = load_latest_results(tmp_path)
-        assert result is not None
-        assert len(result) == len(sample_results_df)
-
-    def test_load_metrics_empty_dir_returns_none(self, tmp_path):
-        """TC-3.1.1e: Empty metrics directory returns None."""
-        from src.ui.dashboard import load_latest_metrics
-        assert load_latest_metrics(tmp_path) is None
+    def test_load_results_bad_path_returns_none(self, tmp_path):
+        """TC-3.1.1b: Non-existent path returns None instead of raising."""
+        from src.ui.dashboard import load_results
+        result = load_results(tmp_path / "does_not_exist.parquet")
+        assert result is None
 
     def test_load_metrics_valid_json(self, tmp_path, sample_metrics):
-        """TC-3.1.1f: Valid metrics JSON loads correctly."""
-        from src.ui.dashboard import load_latest_metrics
+        """TC-3.1.1c: Valid metrics JSON loads correctly."""
+        from src.ui.dashboard import load_metrics
         path = tmp_path / "evaluation_20260525_143211.json"
         path.write_text(json.dumps(sample_metrics))
-        result = load_latest_metrics(tmp_path)
+        result = load_metrics(path)
         assert result is not None
         assert result["total_alerts"] == sample_metrics["total_alerts"]
         assert result["volume_reduction"] == sample_metrics["volume_reduction"]
 
+    def test_load_metrics_bad_path_returns_none(self, tmp_path):
+        """TC-3.1.1d: Non-existent metrics path returns None instead of raising."""
+        from src.ui.dashboard import load_metrics
+        result = load_metrics(tmp_path / "does_not_exist.json")
+        assert result is None
+
+    def test_list_available_runs_empty_dir(self, tmp_path):
+        """TC-3.1.1e: Empty directory returns empty list."""
+        from src.ui.dashboard import list_available_runs
+        runs = list_available_runs(tmp_path, tmp_path)
+        assert runs == []
+
+    def test_list_available_runs_ordered_newest_first(self, tmp_path, sample_results_df):
+        """TC-3.1.1f: Multiple runs returned newest-first."""
+        from src.ui.dashboard import list_available_runs
+        for ts in ["20260524_120000", "20260525_143211"]:
+            sample_results_df.to_parquet(tmp_path / f"evaluation_{ts}.parquet", index=False)
+        runs = list_available_runs(tmp_path, tmp_path)
+        assert len(runs) == 2
+        assert "2026-05-25" in runs[0]["label"]
+        assert "2026-05-24" in runs[1]["label"]
+
+    def test_list_available_runs_metrics_path_linked(self, tmp_path, sample_results_df, sample_metrics):
+        """TC-3.1.1g: Matching metrics JSON is linked; missing JSON gives None."""
+        from src.ui.dashboard import list_available_runs
+        ts = "20260525_143211"
+        sample_results_df.to_parquet(tmp_path / f"evaluation_{ts}.parquet", index=False)
+        # Run without metrics JSON: metrics_path should be None
+        runs = list_available_runs(tmp_path, tmp_path)
+        assert runs[0]["metrics_path"] is None
+        # Now create the JSON: metrics_path should be set
+        (tmp_path / f"evaluation_{ts}.json").write_text(json.dumps(sample_metrics))
+        runs = list_available_runs(tmp_path, tmp_path)
+        assert runs[0]["metrics_path"] is not None
+
     def test_parquet_preserves_list_fields(self, tmp_path, sample_results_df):
-        """TC-3.1.1g: Parquet round-trip preserves shap_top5 and similar_alerts as lists."""
-        from src.ui.dashboard import load_latest_results
+        """TC-3.1.1h: Parquet round-trip preserves shap_top5 and similar_alerts as lists."""
+        from src.ui.dashboard import load_results
         path = tmp_path / "evaluation_20260525_143211.parquet"
         sample_results_df.to_parquet(path, index=False)
-        result = load_latest_results(tmp_path)
+        result = load_results(path)
         assert result is not None
-        # First uncertain-band row should have a non-empty shap_top5
         uncertain_rows = result[result["band"] == "uncertain"]
         if len(uncertain_rows) > 0:
             shap = uncertain_rows.iloc[0]["shap_top5"]
-            # pyarrow reads list-of-dict columns back as numpy object arrays
             assert hasattr(shap, "__iter__"), "shap_top5 must be iterable"
             assert len(shap) > 0
 
@@ -558,7 +572,7 @@ class TestDashboardModule:
         """TC-3.1.6b: All public utility functions are callable."""
         from src.ui import dashboard
         for name in [
-            "load_config", "load_latest_results", "load_latest_metrics",
+            "load_config", "load_results", "load_metrics", "list_available_runs",
             "filter_by_band", "get_user_role", "write_feedback",
             "make_shap_chart", "make_band_distribution_chart",
             "make_pr_curve_chart", "make_confusion_matrix_chart",

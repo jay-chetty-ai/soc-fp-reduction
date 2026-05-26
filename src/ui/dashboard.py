@@ -84,41 +84,81 @@ def load_config(config_path: Path = Path("config.yaml")) -> dict:
         return yaml.safe_load(f)
 
 
-def load_latest_results(results_dir: Path) -> pd.DataFrame | None:
-    """Load the most recently written results parquet file.
+def list_available_runs(results_dir: Path, metrics_dir: Path) -> list[dict]:
+    """Return metadata for all available pipeline runs, newest first.
+
+    Each entry has:
+        label         -- human-readable string for the sidebar selector
+        parquet_path  -- Path to the results parquet
+        metrics_path  -- Path to the matching metrics JSON, or None
 
     Args:
         results_dir: Directory containing evaluation_*.parquet files.
-
-    Returns:
-        DataFrame of DispositionRecord rows, or None if no files found.
-    """
-    parquet_files = sorted(results_dir.glob("evaluation_*.parquet"))
-    if not parquet_files:
-        return None
-    path = parquet_files[-1]
-    df = pd.read_parquet(path)
-    logger.info("Loaded %d results from %s.", len(df), path)
-    return df
-
-
-def load_latest_metrics(metrics_dir: Path) -> dict | None:
-    """Load the most recently written metrics JSON file.
-
-    Args:
         metrics_dir: Directory containing evaluation_*.json files.
 
     Returns:
-        Metrics dict, or None if no files found.
+        List of run dicts ordered newest-first, empty if no runs found.
     """
-    json_files = sorted(metrics_dir.glob("evaluation_*.json"))
-    if not json_files:
+    import pyarrow.parquet as pq
+
+    parquet_files = sorted(results_dir.glob("evaluation_*.parquet"), reverse=True)
+    runs = []
+    for p in parquet_files:
+        stem = p.stem  # evaluation_YYYYMMDD_HHMMSS
+        ts_str = stem.replace("evaluation_", "")
+        try:
+            dt = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
+            date_label = dt.strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            date_label = ts_str
+        try:
+            n_rows = pq.read_metadata(p).num_rows
+        except Exception:
+            n_rows = 0
+        metrics_path = metrics_dir / f"{stem}.json"
+        runs.append({
+            "label": f"{n_rows:,} alerts — {date_label}",
+            "parquet_path": p,
+            "metrics_path": metrics_path if metrics_path.exists() else None,
+        })
+    return runs
+
+
+def load_results(path: Path) -> pd.DataFrame | None:
+    """Load results from a specific parquet file.
+
+    Args:
+        path: Path to an evaluation_*.parquet file.
+
+    Returns:
+        DataFrame of DispositionRecord rows, or None on failure.
+    """
+    try:
+        df = pd.read_parquet(path)
+        logger.info("Loaded %d results from %s.", len(df), path)
+        return df
+    except Exception as exc:
+        logger.error("Failed to load results from %s: %s", path, exc)
         return None
-    path = json_files[-1]
-    with open(path) as f:
-        data = json.load(f)
-    logger.info("Loaded metrics from %s.", path)
-    return data
+
+
+def load_metrics(path: Path) -> dict | None:
+    """Load metrics from a specific JSON file.
+
+    Args:
+        path: Path to an evaluation_*.json file.
+
+    Returns:
+        Metrics dict, or None on failure.
+    """
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        logger.info("Loaded metrics from %s.", path)
+        return data
+    except Exception as exc:
+        logger.error("Failed to load metrics from %s: %s", path, exc)
+        return None
 
 
 def filter_by_band(df: pd.DataFrame, band: str | None) -> pd.DataFrame:
@@ -759,31 +799,52 @@ def main() -> None:
 
         dark_mode = st.toggle("Dark mode", value=False, key="dark_mode_toggle")
 
+        st.markdown("---")
+
+        # Run selector: lists all available evaluation runs newest-first
+        results_dir = Path(config.get("dashboard", {}).get("results_dir", "results"))
+        metrics_dir = Path(config.get("dashboard", {}).get("metrics_dir", "metrics"))
+
+        runs = list_available_runs(results_dir, metrics_dir)
+        if runs:
+            st.markdown("**Pipeline run**")
+            run_labels = [r["label"] for r in runs]
+            selected_idx = st.selectbox(
+                "Select run",
+                options=range(len(run_labels)),
+                format_func=lambda i: run_labels[i],
+                label_visibility="collapsed",
+            )
+            selected_run = runs[selected_idx]
+        else:
+            selected_run = None
+
     # Apply CSS theme
     st.markdown(_DARK_CSS if dark_mode else _LIGHT_CSS, unsafe_allow_html=True)
 
     # ------------------------------------------------------------------
-    # Load data
-    # ------------------------------------------------------------------
-    results_dir = Path(config.get("dashboard", {}).get("results_dir", "results"))
-    metrics_dir = Path(config.get("dashboard", {}).get("metrics_dir", "metrics"))
-
-    # ------------------------------------------------------------------
     # Page routing
     # ------------------------------------------------------------------
+    if selected_run is None:
+        _render_no_data_warning("pipeline results")
+        return
+
     if page == "Alert List":
-        results_df = load_latest_results(results_dir)
+        results_df = load_results(selected_run["parquet_path"])
         if results_df is None:
             _render_no_data_warning("pipeline results")
         else:
             render_alert_list_page(results_df, config, username, role, dark_mode)
 
     elif page == "Metrics":
-        metrics = load_latest_metrics(metrics_dir)
-        if metrics is None:
+        if selected_run["metrics_path"] is None:
             _render_no_data_warning("metrics")
         else:
-            render_metrics_page(metrics, dark_mode)
+            metrics = load_metrics(selected_run["metrics_path"])
+            if metrics is None:
+                _render_no_data_warning("metrics")
+            else:
+                render_metrics_page(metrics, dark_mode)
 
 
 if __name__ == "__main__":
