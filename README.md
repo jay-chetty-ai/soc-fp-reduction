@@ -91,6 +91,27 @@ Default credentials (change before deploying to a shared environment):
 | `analyst` | `analyst123` | analyst (can submit feedback) |
 | `viewer` | `viewer123` | viewer (read-only) |
 
+### Dashboard
+
+The dashboard loads results committed to the repo -- no pipeline run needed to explore it.
+Use the run selector in the sidebar to switch between available evaluation runs.
+
+**Alert list** -- three-band routing, per-alert verdicts, confidence scores, band filter
+
+![Alert list overview](docs/screenshots/01_alert_list_overview.jpeg)
+
+**Metrics** -- PR-AUC curve, confusion matrix, band distribution, volume reduction summary
+
+![Metrics summary](docs/screenshots/02_metrics_summary.jpeg)
+
+**Uncertain alert detail** -- Stage 2 rationale, adversarial counter-argument, SHAP feature importance, RAG similar historical alerts
+
+![Uncertain alert top](docs/screenshots/03a_uncertain_alert_top.jpeg)
+
+![Uncertain alert bottom](docs/screenshots/03b_uncertain_alert_bottom.jpeg)
+
+Full screenshot guide: [docs/screenshots/README.md](docs/screenshots/README.md)
+
 ### Run tests
 
 ```bash
