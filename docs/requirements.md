@@ -1,8 +1,8 @@
 # Requirements: SOC False Positive Reduction POC
 
-**Version**: 1.0  
-**Date**: 2026-05-25  
-**Status**: Draft - Awaiting Approval
+**Version**: 1.1  
+**Date**: 2026-05-28  
+**Status**: Approved -- v1.1 branch in progress
 
 ---
 
@@ -33,14 +33,17 @@
 
 **FR-02.3** The system creates two temporal features from flow timestamps: `hour_of_day` (0-23) and `day_of_week` (0-6, Monday=0).
 
-**FR-02.4** The system produces a deterministic temporal train/test split: flows from dataset days 1-4 form the training set; flows from day 5 form the test set. The split is based on the `Timestamp` column, not random sampling.
+**FR-02.4** The system provides a deterministic temporal train/test split: flows from dataset days 1-4 form the training set; flows from day 5 form the test set. The split is based on the `Timestamp` column, not random sampling. This function is retained for backward compatibility and baseline comparison.
 
 **FR-02.5** Feature scaling is not applied before LightGBM/XGBoost training (tree-based models do not require it). Scaling is applied only for embedding similarity computations if needed.
 
+**FR-02.6** The system provides a per-label stratified split as the primary evaluation method. This function groups the dataset by the `Label` column (specific attack class, not the binary label), then splits each group into train (70%), validation (15%), and test (15%) by row-level random sampling within each group. The validation split is used for conformal calibration (replacing the previous 20% carve-off approach). This guarantees every attack family is represented in all three splits and eliminates the distribution shift that arises from any single-day hold-out (CICIDS2017 attack types are partitioned one per day).
+
 **Acceptance criteria**:
-- Output training and test DataFrames contain zero `NaN` or `inf` values across all feature columns.
+- Output training, validation, and test DataFrames contain zero `NaN` or `inf` values across all feature columns.
 - All feature values fall within the expected range for network flow statistics (e.g., byte counts >= 0, packet counts >= 0).
-- Training set contains only rows with timestamps from days 1-4; test set contains only rows with timestamps from day 5. No overlap.
+- Temporal split: training set contains only rows with timestamps from days 1-4; test set contains only rows with timestamps from day 5. No overlap.
+- Per-label split: every unique value in the `Label` column is present in training, validation, and test sets. Train/val/test sizes are within 2% of 70/15/15 target ratios per group. No row appears in more than one split.
 - `hour_of_day` values are integers in [0, 23]; `day_of_week` values are integers in [0, 6].
 
 ---
@@ -100,7 +103,7 @@ After the search, the system retrains one final model on the full training split
 
 ### FR-04: Conformal Prediction and Band Routing
 
-**FR-04.1** The system applies MAPIE conformal prediction (`mapie` library, `alpha=0.05`) to the LightGBM output probabilities using a held-out calibration set (a stratified 20% split of the training data).
+**FR-04.1** The system applies MAPIE conformal prediction (`mapie` library, `alpha=0.05`) to the LightGBM output probabilities using the validation set from the per-label stratified split (FR-02.6) as the calibration set. This set is genuinely held out from training and covers all attack families, giving the conformal predictor accurate nonconformity scores across the full label distribution.
 
 **FR-04.2** The system assigns every alert to exactly one of three bands based on the conformal prediction interval:
 - **auto-FP**: upper bound of P(TP) interval < `auto_fp_threshold` (default 0.05) -- automatically closed as false positive.
@@ -121,7 +124,7 @@ After the search, the system retrains one final model on the full training split
 
 ### FR-05: RAG Retrieval Layer
 
-**FR-05.1** The system embeds all training set alerts using `sentence-transformers/all-MiniLM-L6-v2` (384-dimensional output). CUDA is used when available; CPU fallback otherwise. Device selection is configurable in `config.yaml` under `rag.device`.
+**FR-05.1** The system embeds all training set and validation set alerts using `sentence-transformers/all-MiniLM-L6-v2` (384-dimensional output). Including the validation set in the FAISS index ensures all attack families are represented as retrieval candidates, regardless of which day they appear on. CUDA is used when available; CPU fallback otherwise. Device selection is configurable in `config.yaml` under `rag.device`.
 
 **FR-05.2** The system builds a FAISS index from training set embeddings and saves it to `models/faiss_index.bin`.
 
@@ -290,8 +293,8 @@ The full threat analysis is in `docs/threat_model.md`. The following are functio
 
 | ID | Requirement | Target | Measurement |
 |----|------------|--------|-------------|
-| NFR-01 | Stage 1 PR-AUC on temporal hold-out | >= 0.85 | `sklearn.metrics.average_precision_score` on day-5 test set |
-| NFR-02 | True positive recall | >= 95% | Recall at the operating decision threshold on day-5 test set |
+| NFR-01 | Stage 1 PR-AUC on per-label stratified test set | >= 0.85 | `sklearn.metrics.average_precision_score` on 15% stratified test split |
+| NFR-02 | True positive recall | >= 95% | Recall at the operating decision threshold on 15% stratified test split |
 | NFR-03 | End-to-end alert volume reduction | >= 70% | `(auto_fp + auto_tp) / total` across the test set |
 | NFR-04 | Auto-FP band false negative rate | <= 1% | `fn_in_auto_fp / total_auto_fp` across the test set |
 | NFR-05 | Stage 1 scoring latency | < 500ms per alert | Single-row inference time, p95, includes SHAP computation |

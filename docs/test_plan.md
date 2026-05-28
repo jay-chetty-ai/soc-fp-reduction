@@ -1,8 +1,8 @@
 # Test Plan: SOC False Positive Reduction POC
 
-**Version**: 1.1  
-**Date**: 2026-05-25  
-**Status**: Draft - Awaiting Approval
+**Version**: 1.2  
+**Date**: 2026-05-28  
+**Status**: Approved -- v1.1 branch in progress
 
 ---
 
@@ -152,6 +152,43 @@ The real Anthropic API is called **only** in the E2E smoke test (Section 9), and
   - `Flow Duration` >= 0
   - `Flow Bytes/s` >= 0
   - `Destination Port` in [0, 65535]
+
+---
+
+### Story 1.2b Tests (`tests/test_epic1_data.py::TestPerLabelSplit`)
+
+#### TC-1.2b.1: All attack families present in every split
+- **Input**: `fixture_df` after `clean_features` and `add_temporal_features`
+- **Action**: `per_day_stratified_split(df, train_ratio=0.70, val_ratio=0.15, random_state=42)`
+- **Expected**: `set(train_df["Label"].unique()) == set(val_df["Label"].unique()) == set(test_df["Label"].unique()) == set(df["Label"].unique())`
+- **Rationale**: verifies no attack family is dropped from any split
+
+#### TC-1.2b.2: No row appears in more than one split
+- **Input**: `fixture_df`
+- **Action**: `per_day_stratified_split(df, ...)`
+- **Expected**: `train_df.index`, `val_df.index`, `test_df.index` are pairwise disjoint
+- **Checks**: `len(train_df) + len(val_df) + len(test_df) == len(df)` (no rows lost or duplicated)
+
+#### TC-1.2b.3: Split sizes match target ratios within 2%
+- **Input**: `fixture_df`
+- **Action**: `per_day_stratified_split(df, train_ratio=0.70, val_ratio=0.15, random_state=42)`
+- **Expected**: for each split (train, val, test), `abs(split_size / total - target_ratio) < 0.02`
+- **Note**: exact sizes vary by rounding; the 2% tolerance accommodates integer rounding across groups
+
+#### TC-1.2b.4: Split is deterministic (same random_state produces same result)
+- **Input**: `fixture_df`
+- **Action**: call `per_day_stratified_split` twice with `random_state=42`
+- **Expected**: `train_df1.index.tolist() == train_df2.index.tolist()` for train, val, and test
+
+#### TC-1.2b.5: Different random states produce different splits
+- **Input**: `fixture_df`
+- **Action**: call with `random_state=42` and `random_state=99`
+- **Expected**: at least one split index differs between the two calls
+
+#### TC-1.2b.6: Single-class group handled without error
+- **Input**: a synthetic DataFrame where one Label class has only 3 rows
+- **Action**: `per_day_stratified_split(df, train_ratio=0.70, val_ratio=0.15, random_state=42)`
+- **Expected**: no exception; the small group's rows are distributed across splits (may result in 0 rows in val or test for very small groups -- function must not crash)
 
 ---
 
