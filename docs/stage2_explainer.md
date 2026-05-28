@@ -94,9 +94,11 @@ This gives the sentence encoder something readable -- it is not trained on raw n
 
 **Step 4: FAISS IndexFlatIP.** The normalized vectors are stored in a flat inner-product index. "Flat" means brute-force exact search (no approximation). At 2.1M vectors × 384 dimensions × 4 bytes = ~3.1 GB in memory. For a POC this is fine; a production system would use IVF or HNSW indexing for sub-linear query time.
 
-**Step 5: Save both artifacts.** The FAISS index (`models/faiss_index.bin`) and the original training DataFrame (`models/training_df.parquet`) are saved together. At query time the index returns integer row indices; the DataFrame is used to look up the verified Label for each index to include in the prompt.
+**Step 5: Save both artifacts.** The FAISS index (`models/faiss_index.bin`) and the indexed DataFrame (`models/training_df.parquet`) are saved together. At query time the index returns integer row indices; the DataFrame is used to look up the verified Label for each index to include in the prompt.
 
-**What the index does NOT contain:** The index holds training data only (days 1-4). Day-5 (Friday) attack types -- DDoS, PortScan, Bot -- are not in the index. When an alert from those attack types reaches Stage 2, the retrieved neighbors are mostly BENIGN alerts (the closest things in embedding space), which biases the historical context in the prompt. This is the same distribution-shift problem seen in Stage 1 metrics, now visible in the RAG layer.
+**What the index contains (v1.1+):** The index covers both the training split (70%) and the validation split (15%) from the per-label stratified split. This means all 12 attack families in CICIDS2017 are represented as retrieval candidates, including DDoS, PortScan, and Bot which previously appeared only in the day-5 (Friday) temporal hold-out.
+
+**v1.0 note (for reference):** In v1.0, the index held only training data (days 1-4). Day-5 Friday attack types (DDoS, PortScan, Bot) were absent. When an alert from those types reached Stage 2, the retrieved neighbors were mostly BENIGN alerts (closest in embedding space), biasing the historical context in the prompt. This is resolved in v1.1 by the per-label stratified split.
 
 ---
 
@@ -108,7 +110,7 @@ RAG grounds the decision in historical precedent: "5 of the 5 most similar past 
 
 RAG also handles concept drift naturally. If the training set is periodically updated with new analyst-verified dispositions and re-indexed, the retrieved context reflects recent patterns without retraining the LLM or the ML classifier.
 
-The limit of RAG in this system is index coverage. Queries for attack types absent from the training set return poor neighbors (benign alerts with some numeric similarity), and the historical context is misleading rather than helpful. That is the case for Friday DDoS and PortScan in this POC.
+The limit of RAG in this system is index coverage. Queries for attack types absent from the index return poor neighbors (benign alerts with some numeric similarity), and the historical context is misleading rather than helpful. In v1.0, this affected Friday DDoS and PortScan because only Mon-Thu training data was indexed. In v1.1, the index covers all attack families via the per-label stratified split.
 
 ---
 
@@ -304,11 +306,11 @@ This is not a failure mode to hide. It is the honest result of a Mon-Thu-trained
 
 ### Three options for addressing distribution shift
 
-**Option 1: Retrain with Friday data included.** Change the temporal split -- for example, train on Mon-Wed, hold out Thu-Fri. All five attack-type families appear in training. This is the correct fix for a production deployment where the model needs to handle any attack type the dataset covers. The trade-off is losing the strict "never seen the test day" temporal separation.
+**Option 1: Per-label stratified split (implemented in v1.1).** Group rows by specific attack class and split each group 70/15/15. Every attack family — including DDoS, PortScan, Bot — is represented in all three splits. This is the correct fix: the model trains on all attack types and the test set measures generalization across the full label distribution, not just the subset that happened to fall on days 1-4. This is the approach used in v1.1.
 
-**Option 2: Evaluate on in-distribution alerts only.** Filter the fixture to exclude rows where Label is in `{'DDoS', 'PortScan', 'Bot'}` and evaluate on the remaining rows. This measures what the model can actually do on attack types it was trained on. Recall on this filtered fixture is substantially higher because every false negative is a genuine model error, not a distribution shift artifact. This fixture is appropriate for measuring the model's ceiling performance.
+**Option 2: Evaluate on in-distribution alerts only.** Filter the fixture to exclude rows where Label is in `{'DDoS', 'PortScan', 'Bot'}` and evaluate on the remaining rows. This measures what the v1.0 model can actually do on attack types it was trained on. The filtered fixture (`data/fixtures/fixture_10k_in_distribution.csv`) is committed to the repo for comparison. Recall on this fixture is substantially higher because every false negative is a genuine model error, not a distribution shift artifact.
 
-**Option 3: Report both numbers and explain the gap.** Run evaluation on the full fixture (real-world conditions) and on the filtered fixture (in-distribution conditions) and report both. The difference between the two recall values is the cost of the distribution shift -- a concrete, measurable number rather than a vague disclaimer. This is the most informative approach for a portfolio or a Principal Engineer review.
+**Option 3: Report both numbers and explain the gap.** Run evaluation on the full fixture (real-world conditions) and on the filtered fixture (in-distribution conditions) and report both. The difference between the two recall values is the cost of the distribution shift -- a concrete, measurable number rather than a vague disclaimer. This approach was used in the v1.0 analysis document (`results/analysis_full_1k.md`).
 
 ### What each fixture tells you
 

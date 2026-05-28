@@ -6,7 +6,8 @@ data:
   processed_dir: data/processed
   fixtures_dir: data/fixtures
   fixture_size: 10000
-  test_day: 5                    # CICIDS2017 day used as temporal hold-out (Friday)
+  test_day: 5                    # Legacy temporal hold-out day (Friday). Retained for backward compatibility.
+                                 # Primary split is now per-label stratified 70/15/15 (see train_stage1.py).
 
 # Stage 1: ML Classifier
 stage1:
@@ -20,7 +21,9 @@ stage1:
 tuning:
   n_trials: 50
   cv_folds: 5
-  calibration_split: 0.2        # fraction of training data held out for conformal calibration
+  calibration_split: 0.2        # Legacy: fraction of training data carved out for calibration.
+                                 # Superseded in v1.1 by the per-label stratified val split (15%).
+                                 # Retained so split_for_calibration() tests continue to pass.
   # Convergence stopping: halt if best PR-AUC has not improved by convergence_delta
   # in the last convergence_patience consecutive trials
   convergence_patience: 20

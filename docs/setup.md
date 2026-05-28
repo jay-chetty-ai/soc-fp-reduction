@@ -136,19 +136,19 @@ Artifacts saved:
 
 ### Step 2: Build the RAG index
 
-Embeds the training data and builds the FAISS vector index used for historical alert retrieval in Stage 2.
+Embeds the training and validation data and builds the FAISS vector index used for historical alert retrieval in Stage 2. Including the validation set (15% of data) ensures all attack families are available as retrieval candidates — with the previous temporal split, Friday-only attack types (DDoS, PortScan, Bot) were absent from the index.
 
 ```bash
 # Embed a 50K-row sample (faster, good for demos)
 python scripts/build_rag_index.py --sample-size 50000
 
-# Embed the full training set (~2.2M rows; takes 15-30 min with GPU, longer on CPU)
+# Embed the full train+val set (~2.45M rows; takes 15-30 min with GPU, longer on CPU)
 python scripts/build_rag_index.py
 ```
 
 Artifacts saved:
 - `models/faiss_index.bin` -- FAISS flat inner-product index
-- `models/training_df.parquet` -- training rows aligned to FAISS index positions
+- `models/training_df.parquet` -- indexed rows (train + val) aligned to FAISS index positions
 
 ### Step 3: Run the pipeline
 
@@ -191,7 +191,7 @@ Volume reduction: 78.2% (auto-closed + confirmed FP / total)
 Throughput: 4.3 alerts/s
 ```
 
-### Step 4: Launch the dashboard (Epic 3 -- in progress)
+### Step 4: Launch the dashboard
 
 ```bash
 streamlit run src/ui/dashboard.py
@@ -212,7 +212,7 @@ pytest tests/test_epic1_data.py -v --tb=short
 pytest tests/test_security.py -v --tb=short
 ```
 
-The test suite uses `data/fixtures/fixture_10k.csv` as its primary fixture. Tests that call the Claude API use a mock client. All 103+ tests should pass without requiring model artifacts or the full dataset.
+The test suite uses `data/fixtures/fixture_10k.csv` as its primary fixture. Tests that call the Claude API use a mock client. All 157 tests should pass without requiring model artifacts or the full dataset.
 
 ---
 
@@ -255,14 +255,14 @@ All runtime parameters live in `config.yaml`. No operational values are hardcode
 | Section | Key | Default | Description |
 |---------|-----|---------|-------------|
 | `data` | `raw_dir` | `data/raw` | Directory containing CICIDS2017 CSV files |
-| `data` | `test_day` | `5` | Day number used as temporal hold-out (Friday) |
+| `data` | `test_day` | `5` | Day number for the legacy temporal hold-out (retained for backward compatibility; primary split is now per-label stratified 70/15/15) |
 | `stage1` | `model_artifact_path` | `models/stage1_model.pkl` | Trained LightGBM output path |
 | `stage1` | `shap_top_k` | `5` | Number of top SHAP features included in Stage 2 prompts |
 | `stage1` | `is_unbalance` | `true` | LightGBM class imbalance handling |
 | `tuning` | `n_trials` | `50` | Optuna trial budget |
 | `tuning` | `convergence_patience` | `20` | Trials without improvement before early stop |
 | `tuning` | `convergence_delta` | `0.001` | Minimum PR-AUC gain to count as improvement |
-| `tuning` | `calibration_split` | `0.2` | Fraction of training data held out for conformal calibration |
+| `tuning` | `calibration_split` | `0.2` | Legacy: fraction of training data carved out for conformal calibration. Superseded by the per-label stratified val split (15%); retained for backward compatibility |
 | `conformal` | `alpha` | `0.05` | Miscoverage rate; gives 95% coverage guarantee |
 | `conformal` | `artifact_path` | `models/conformal.pkl` | Conformal predictor output path |
 | `stage2` | `model` | `claude-sonnet-4-20250514` | Claude model for Stage 2 adjudication |

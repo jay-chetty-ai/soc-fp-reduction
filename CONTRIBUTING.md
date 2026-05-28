@@ -38,11 +38,16 @@ All tests must pass before submitting a PR.
 
 ## Commit Messages
 
-Format: `epic[N] story[N.M]: brief description`
+Format: `story-<N.M>: brief description`
 
 Examples:
-- `epic1 story1.1: add CICIDS2017 dataset loader`
-- `epic2 story2.3: implement adversarial validation agent`
+- `story-1.1: dataset loading, fixture creation, secrets management (S2), audit logging (S3)`
+- `story-2.3: Stage 2 LangGraph adjudicator, adversarial validation, A2A protocol`
+- `story-1.2b: per-label stratified split, update training script to use new split`
+
+For non-story changes (docs, config, tooling):
+- `docs: update stage2_explainer for v1.1 RAG index coverage`
+- `config: add auth section with bcrypt-hashed credentials`
 
 ## Code Style
 

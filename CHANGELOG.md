@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased] -- feature/stratified-split-evaluation
+
+### Added
+
+**Per-label stratified split (Story 1.2b)**
+- `src/data/features.py`: `per_day_stratified_split(df, train_ratio=0.70, val_ratio=0.15, random_state=42)` -- groups CICIDS2017 rows by specific attack class (`Label` column), shuffles within each group, then slices 70/15/15 for train/val/test. Every attack family guaranteed in training; groups with >= 10 rows also appear in val and test.
+- `tests/test_epic1_data.py::TestPerLabelSplit`: 8 tests covering label coverage, no row leakage, ratio correctness, determinism, seed variation, small-group edge case, and error handling.
+
+### Changed
+- `scripts/train_stage1.py`: replaced `temporal_train_test_split` + `split_for_calibration` with `per_day_stratified_split`; validation split (15%) passed directly to conformal calibration instead of carving 20% off training; model trains on 70% not ~56%.
+- `scripts/build_rag_index.py`: FAISS index now covers train + val rows (85% of all data) so all attack families are available as RAG retrieval candidates.
+- `docs/`: requirements v1.1, architecture v2.1, sprint_backlog v2.1, test_plan v1.2 -- all updated before code changes per spec-driven development process.
+
+### Fixed
+- Distribution shift: v1.0 held out Friday (day 5) which contained DDoS, PortScan, and Bot attack types never seen during training. The per-label split guarantees all 12 attack families in all three splits.
+
+---
+
 ## [3.0.0] -- Epic 3 Complete -- 2026-05-26
 
 ### Added

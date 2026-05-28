@@ -126,7 +126,7 @@ pytest tests/ -v --tb=short
 | 2 | Conformal Calibration & Stage 2 LLM | Complete |
 | 3 | Analyst UI & Demo | Complete |
 
-**Test count**: 148 tests passing (Epics 1 + 2 + 3 + security).
+**Test count**: 157 tests passing (Epics 1 + 2 + 3 + security + Story 1.2b per-label split).
 
 ## Configuration Reference
 
