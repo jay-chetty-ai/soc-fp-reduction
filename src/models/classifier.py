@@ -54,22 +54,50 @@ def split_for_calibration(
 
 
 def _build_lgb_params(trial: optuna.Trial, config: dict[str, Any]) -> dict[str, Any]:
-    """Sample LightGBM hyperparameters from Optuna trial."""
+    """Sample LightGBM hyperparameters from Optuna trial.
+
+    Bounds are read from config.yaml tuning.search_space. To switch between
+    the standard preset (~1-2 h) and the wide preset (~4-8 h), edit that
+    section of config.yaml -- no code changes required.
+    """
+    ss = config["tuning"]["search_space"]
+
+    # max_depth: categorical list when max_depth_choices is set; int range when null.
+    depth_choices = ss.get("max_depth_choices")
+    if depth_choices is not None:
+        max_depth = trial.suggest_categorical("max_depth", depth_choices)
+    else:
+        max_depth = trial.suggest_int("max_depth", 3, 12)
+
     return {
         "objective": "binary",
         "metric": "binary_logloss",
         "is_unbalance": config["stage1"]["is_unbalance"],
         "verbose": -1,
         "n_jobs": -1,
-        "num_leaves": trial.suggest_int("num_leaves", 31, 512),
-        "max_depth": trial.suggest_int("max_depth", 3, 12),
-        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-        "min_child_samples": trial.suggest_int("min_child_samples", 10, 100),
-        "subsample": trial.suggest_float("subsample", 0.5, 1.0),
+        "num_leaves": trial.suggest_int(
+            "num_leaves", ss["num_leaves_min"], ss["num_leaves_max"]
+        ),
+        "max_depth": max_depth,
+        "learning_rate": trial.suggest_float(
+            "learning_rate", ss["learning_rate_min"], ss["learning_rate_max"], log=True
+        ),
+        "min_child_samples": trial.suggest_int(
+            "min_child_samples", ss["min_child_samples_min"], ss["min_child_samples_max"]
+        ),
+        "subsample": trial.suggest_float(
+            "subsample", ss["subsample_min"], ss["subsample_max"]
+        ),
         "subsample_freq": 5,
-        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-        "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 10.0),
-        "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 10.0),
+        "colsample_bytree": trial.suggest_float(
+            "colsample_bytree", ss["colsample_bytree_min"], ss["colsample_bytree_max"]
+        ),
+        "reg_alpha": trial.suggest_float(
+            "reg_alpha", ss["reg_alpha_min"], ss["reg_alpha_max"]
+        ),
+        "reg_lambda": trial.suggest_float(
+            "reg_lambda", ss["reg_lambda_min"], ss["reg_lambda_max"]
+        ),
     }
 
 

@@ -33,6 +33,32 @@ tuning:
   optuna_study_name: stage1_lgbm_tuning
   optuna_storage: null           # null = in-memory; set to sqlite:///models/optuna.db to persist
 
+  # Hyperparameter search space bounds.
+  # Two presets:
+  #
+  #   standard  (current): matches original spec; ~1-2 hours on full 2.8M-row dataset.
+  #   wide      (Option A): broader bounds for maximum model quality; ~4-8 hours.
+  #
+  # To switch to the wide preset, change only the three values marked below.
+  search_space:
+    num_leaves_min: 31
+    num_leaves_max: 127           # Option A (wide): 512
+    # max_depth_choices: categorical list used by suggest_categorical.
+    # Option A (wide): set to null to use suggest_int(3, 12) instead.
+    max_depth_choices: [-1, 6, 8, 10]
+    learning_rate_min: 0.01
+    learning_rate_max: 0.1        # Option A (wide): 0.3
+    min_child_samples_min: 10
+    min_child_samples_max: 100
+    subsample_min: 0.5
+    subsample_max: 1.0
+    colsample_bytree_min: 0.5
+    colsample_bytree_max: 1.0
+    reg_alpha_min: 0.0
+    reg_alpha_max: 10.0
+    reg_lambda_min: 0.0
+    reg_lambda_max: 10.0
+
 # Conformal Prediction
 conformal:
   alpha: 0.05

@@ -490,6 +490,23 @@ class TestClassifier:
                 "n_estimators_ceiling": 50,
                 "optuna_study_name": "test_bounds",
                 "optuna_storage": None,
+                "search_space": {
+                    "num_leaves_min": 31,
+                    "num_leaves_max": 127,
+                    "max_depth_choices": [-1, 6, 8, 10],
+                    "learning_rate_min": 0.01,
+                    "learning_rate_max": 0.1,
+                    "min_child_samples_min": 10,
+                    "min_child_samples_max": 100,
+                    "subsample_min": 0.5,
+                    "subsample_max": 1.0,
+                    "colsample_bytree_min": 0.5,
+                    "colsample_bytree_max": 1.0,
+                    "reg_alpha_min": 0.0,
+                    "reg_alpha_max": 10.0,
+                    "reg_lambda_min": 0.0,
+                    "reg_lambda_max": 10.0,
+                },
             },
             "stage1": {
                 "is_unbalance": True,
@@ -497,9 +514,9 @@ class TestClassifier:
             },
         }
         best_params, _, _ = tune(X, y, minimal_config)
-        assert 31 <= best_params["num_leaves"] <= 512
-        assert 3 <= best_params["max_depth"] <= 12
-        assert 0.01 <= best_params["learning_rate"] <= 0.3
+        assert 31 <= best_params["num_leaves"] <= 127
+        assert best_params["max_depth"] in [-1, 6, 8, 10]
+        assert 0.01 <= best_params["learning_rate"] <= 0.1
         assert 10 <= best_params["min_child_samples"] <= 100
         assert 0.5 <= best_params["subsample"] <= 1.0
         assert 0.5 <= best_params["colsample_bytree"] <= 1.0
