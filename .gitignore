@@ -37,3 +37,9 @@ __pycache__/
 
 # OS
 .DS_Store
+
+# Claude Code internal files
+.claude/
+
+# Large pipeline run logs (training logs committed; run_pipeline logs excluded for size)
+logs/run_pipeline_*.log

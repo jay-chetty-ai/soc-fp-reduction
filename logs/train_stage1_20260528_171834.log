@@ -1,0 +1,72 @@
+2026-05-28 17:18:36,249 __main__ INFO Loading dataset...
+2026-05-28 17:18:36,249 src.data.loader INFO Loading Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv
+2026-05-28 17:18:40,295 src.data.loader INFO   225745 rows, 80 columns
+2026-05-28 17:18:40,295 src.data.loader INFO Loading Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv
+2026-05-28 17:18:45,060 src.data.loader INFO   286467 rows, 80 columns
+2026-05-28 17:18:45,060 src.data.loader INFO Loading Friday-WorkingHours-Morning.pcap_ISCX.csv
+2026-05-28 17:18:48,435 src.data.loader INFO   191033 rows, 80 columns
+2026-05-28 17:18:48,435 src.data.loader INFO Loading Monday-WorkingHours.pcap_ISCX.csv
+2026-05-28 17:18:57,764 src.data.loader INFO   529918 rows, 80 columns
+2026-05-28 17:18:57,764 src.data.loader INFO Loading Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv
+2026-05-28 17:19:02,653 src.data.loader INFO   288602 rows, 80 columns
+2026-05-28 17:19:02,653 src.data.loader INFO Loading Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv
+2026-05-28 17:19:05,637 src.data.loader INFO   170366 rows, 80 columns
+2026-05-28 17:19:05,637 src.data.loader INFO Loading Tuesday-WorkingHours.pcap_ISCX.csv
+2026-05-28 17:19:13,322 src.data.loader INFO   445909 rows, 80 columns
+2026-05-28 17:19:13,322 src.data.loader INFO Loading Wednesday-workingHours.pcap_ISCX.csv
+2026-05-28 17:19:25,675 src.data.loader INFO   692703 rows, 80 columns
+2026-05-28 17:19:26,236 src.data.loader INFO Total combined rows: 2830743, columns: 80
+2026-05-28 17:19:26,266 __main__ INFO Engineering features...
+2026-05-28 17:19:29,163 src.data.features WARNING clean_features: dropped 2867 rows with NaN/inf values.
+2026-05-28 17:19:31,709 __main__ INFO Splitting dataset using per-label stratified split (70/15/15)...
+2026-05-28 17:19:34,553 src.data.features INFO per_day_stratified_split: label='BENIGN' total=2271320 train=1589924 val=340698 test=340698
+2026-05-28 17:19:34,554 src.data.features INFO per_day_stratified_split: label='Bot' total=1956 train=1370 val=294 test=292
+2026-05-28 17:19:34,588 src.data.features INFO per_day_stratified_split: label='DDoS' total=128025 train=89618 val=19204 test=19203
+2026-05-28 17:19:34,591 src.data.features INFO per_day_stratified_split: label='DoS GoldenEye' total=10293 train=7206 val=1544 test=1543
+2026-05-28 17:19:34,654 src.data.features INFO per_day_stratified_split: label='DoS Hulk' total=230124 train=161087 val=34519 test=34518
+2026-05-28 17:19:34,656 src.data.features INFO per_day_stratified_split: label='DoS Slowhttptest' total=5499 train=3850 val=825 test=824
+2026-05-28 17:19:34,657 src.data.features INFO per_day_stratified_split: label='DoS slowloris' total=5796 train=4058 val=870 test=868
+2026-05-28 17:19:34,659 src.data.features INFO per_day_stratified_split: label='FTP-Patator' total=7935 train=5555 val=1191 test=1189
+2026-05-28 17:19:34,659 src.data.features INFO per_day_stratified_split: label='Heartbleed' total=11 train=8 val=2 test=1
+2026-05-28 17:19:34,660 src.data.features INFO per_day_stratified_split: label='Infiltration' total=36 train=26 val=6 test=4
+2026-05-28 17:19:34,702 src.data.features INFO per_day_stratified_split: label='PortScan' total=158804 train=111163 val=23821 test=23820
+2026-05-28 17:19:34,704 src.data.features INFO per_day_stratified_split: label='SSH-Patator' total=5897 train=4128 val=885 test=884
+2026-05-28 17:19:34,704 src.data.features INFO per_day_stratified_split: label='Web Attack � Brute Force' total=1507 train=1055 val=227 test=225
+2026-05-28 17:19:34,705 src.data.features INFO per_day_stratified_split: label='Web Attack � Sql Injection' total=21 train=15 val=4 test=2
+2026-05-28 17:19:34,705 src.data.features INFO per_day_stratified_split: label='Web Attack � XSS' total=652 train=457 val=98 test=97
+2026-05-28 17:19:35,220 src.data.features INFO per_day_stratified_split totals: train=1979520 val=424188 test=424168 (total=2827876).
+2026-05-28 17:19:35,348 __main__ INFO Dataset: train=1979520 val=424188 test=424168 features=80 attack_rate_train=19.68%
+2026-05-28 17:19:35,348 __main__ INFO Running Optuna hyperparameter tuning (n_trials=50)...
+2026-05-28 19:24:49,742 src.models.classifier INFO Convergence callback: no improvement > 0.0010 in last 20 trials. Stopping study.
+2026-05-28 19:24:49,742 src.models.classifier INFO Tuning complete. Best trial=12, PR-AUC=1.0000, n_estimators=840, params={'max_depth': -1, 'num_leaves': 118, 'learning_rate': 0.04001756157561299, 'min_child_samples': 79, 'subsample': 0.8057651713317433, 'colsample_bytree': 0.5063468294996711, 'reg_alpha': 4.4528809823167474, 'reg_lambda': 3.285736841302194}
+2026-05-28 19:24:49,742 __main__ INFO Best Optuna trial: PR-AUC=1.0000  n_estimators=840
+2026-05-28 19:24:49,742 __main__ INFO Best params: {'max_depth': -1, 'num_leaves': 118, 'learning_rate': 0.04001756157561299, 'min_child_samples': 79, 'subsample': 0.8057651713317433, 'colsample_bytree': 0.5063468294996711, 'reg_alpha': 4.4528809823167474, 'reg_lambda': 3.285736841302194}
+2026-05-28 19:24:49,742 __main__ INFO Training final model on 70% training split (n_estimators=840)...
+2026-05-28 19:25:53,180 src.models.classifier INFO Final model trained with 840 estimators.
+2026-05-28 19:25:53,180 __main__ INFO Evaluating on per-label stratified test split...
+2026-05-28 19:25:56,366 src.models.classifier INFO Evaluation: PR-AUC=1.0000 precision=0.9986 recall=0.9998 F1=0.9992
+2026-05-28 19:25:56,366 __main__ INFO Saving model to models/stage1_model.pkl...
+2026-05-28 19:25:56,413 src.models.integrity INFO Saved hash for stage1_model.pkl: d134d948a847c92b...
+2026-05-28 19:25:56,414 src.models.classifier INFO Model saved to models/stage1_model.pkl.
+2026-05-28 19:25:56,414 __main__ INFO Fitting conformal predictor on validation split (424188 rows)...
+2026-05-28 19:25:59,068 src.models.conformal INFO Fitted conformal predictor on 424188 calibration samples (alpha=0.050).
+2026-05-28 19:26:01,881 src.models.conformal INFO Conformal coverage: 0.9493.
+2026-05-28 19:26:01,881 __main__ INFO Conformal empirical coverage on test set: 0.9493 (target >= 0.95)
+2026-05-28 19:26:01,881 __main__ INFO Saving conformal predictor to models/conformal.pkl...
+2026-05-28 19:26:01,945 src.models.integrity INFO Saved hash for conformal.pkl: 7c26a4bdb738bbed...
+2026-05-28 19:26:01,945 src.models.conformal INFO Conformal predictor saved to models/conformal.pkl.
+2026-05-28 19:26:01,945 __main__ INFO Generating SHAP explanations on test set sample (100 rows)...
+2026-05-28 19:26:03,054 __main__ INFO SHAP values computed: shape=(100, 80)
+2026-05-28 19:26:03,054 __main__ INFO All metric targets met. Training complete.
+
+====================================================
+ Stage 1 Evaluation Summary
+ Evaluation split: per-label stratified test
+====================================================
+  PR-AUC (target >= 0.85)  : 1.0000
+  Precision                : 0.9986
+  Recall (target >= 0.95)  : 0.9998
+  F1                       : 0.9992
+  Confusion matrix: TN=340578 FP=120 FN=19 TP=83451
+====================================================
+
