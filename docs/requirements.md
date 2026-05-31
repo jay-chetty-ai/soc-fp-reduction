@@ -2,7 +2,7 @@
 
 **Version**: 1.1  
 **Date**: 2026-05-28  
-**Status**: Approved -- v1.1 branch in progress
+**Status**: Approved -- v1.1 complete (Story 1.2b, per-label stratified split)
 
 ---
 
@@ -50,9 +50,9 @@
 
 ### FR-03: Stage 1 Classification
 
-**FR-03.1** The system trains a LightGBM classifier with `is_unbalance=True` on the training split (days 1-4).
+**FR-03.1** The system trains a LightGBM classifier with `is_unbalance=True` on the 70% training split from `per_day_stratified_split` (FR-02.6).
 
-**FR-03.2** The system tunes LightGBM hyperparameters using **Optuna** (TPE sampler) with 5-fold stratified cross-validation. The objective function is mean PR-AUC across the 5 held-out folds. The calibration split (20% of training data reserved for conformal prediction) is excluded from CV folds. No test-set data (day 5) is seen during tuning.
+**FR-03.2** The system tunes LightGBM hyperparameters using **Optuna** (TPE sampler) with 5-fold stratified cross-validation. The objective function is mean PR-AUC across the 5 held-out folds. Only the 70% training split is used during tuning; the 15% validation and 15% test splits are not seen. Hyperparameter search bounds are read from `config.yaml tuning.search_space`; two presets are documented (standard ~1-2h; wide/Option-A ~4-8h).
 
 The tuned parameters and their search ranges are:
 
@@ -80,7 +80,7 @@ The search has two stopping conditions:
 
 After the search, the system retrains one final model on the full training split using the best hyperparameter set. The final `n_estimators` is the mean of the best early-stopping round across all 5 CV folds of the winning trial, rounded up to the nearest 10.
 
-**FR-03.3** The system evaluates the trained model on the day-5 temporal hold-out and reports: PR-AUC, precision at operating threshold, recall at operating threshold, F1 score, and a confusion matrix.
+**FR-03.3** The system evaluates the trained model on the 15% per-label stratified test split and reports: PR-AUC, precision at operating threshold, recall at operating threshold, F1 score, and a confusion matrix.
 
 **FR-03.4** The system also trains an XGBoost model with `scale_pos_weight` as a comparison baseline and reports its PR-AUC alongside the LightGBM result.
 
@@ -89,13 +89,13 @@ After the search, the system retrains one final model on the full training split
 **FR-03.6** The system generates SHAP TreeExplainer values for every prediction in the test set. No alert is scored without a corresponding SHAP explanation.
 
 **Acceptance criteria**:
-- LightGBM PR-AUC on day-5 hold-out >= 0.85.
-- True positive recall on day-5 hold-out >= 0.95.
+- LightGBM PR-AUC on 15% per-label stratified test split >= 0.85.
+- True positive recall on 15% per-label stratified test split >= 0.95.
 - Every test row has a SHAP values array of shape `(n_features,)`. No missing or NaN SHAP values.
 - Saved model file loads without error and produces identical predictions on the same input.
 - Model artifact SHA-256 hash is stored in `models/checksums.json` at save time and verified at load time (see FR-10.4).
 - Optuna study completes without error and logs the best trial's hyperparameters and CV PR-AUC.
-- Best CV PR-AUC (on training folds) is logged and >= 0.80 (a lower bar than the test target, since CV folds are within training days 1-4).
+- Best CV PR-AUC (on training folds) is logged and >= 0.80 (a lower bar than the test target, since CV folds are within the 70% training split).
 - The convergence callback fires and halts the study early when the plateau condition is met (verified in tests by running a short study with `n_trials=25` and a wide `convergence_delta`).
 - Final retrained model uses the best Optuna hyperparameters (verified by comparing model params to the best trial's params dict).
 
@@ -254,7 +254,7 @@ The pipeline orchestrator calls agents exclusively via the A2A client (`src/llm/
 
 **FR-09.1** A metrics page displays the precision-recall curve (PR curve) from the Stage 1 evaluation run.
 
-**FR-09.2** A confusion matrix heatmap is displayed for the Stage 1 predictions on the day-5 hold-out.
+**FR-09.2** A confusion matrix heatmap is displayed for the Stage 1 predictions on the 15% per-label stratified test split.
 
 **FR-09.3** A band distribution pie chart shows the percentage of alerts in each band (auto-FP, uncertain, auto-TP).
 

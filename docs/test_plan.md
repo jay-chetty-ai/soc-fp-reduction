@@ -2,7 +2,7 @@
 
 **Version**: 1.2  
 **Date**: 2026-05-28  
-**Status**: Approved -- v1.1 branch in progress
+**Status**: Approved -- v1.1 complete (Story 1.2b, per-label stratified split)
 
 ---
 

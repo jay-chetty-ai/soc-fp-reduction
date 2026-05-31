@@ -2,16 +2,16 @@
 
 **Version**: 2.1  
 **Date**: 2026-05-28  
-**Status**: Approved and in execution -- v1.1 branch in progress
+**Status**: Approved and complete -- v1.1 Story 1.2b done, PR open on feature/stratified-split-evaluation
 
 ## Status Summary
 
 | Epic | Description | Status |
 |------|-------------|--------|
-| 1 | Data Ingestion and Stage 1 Classifier | **Complete** (103 tests passing); Story 1.2b in progress |
-| 2 | Conformal Calibration and Stage 2 LLM | **Complete** (103 tests passing) |
+| 1 | Data Ingestion and Stage 1 Classifier | **Complete** (157 tests passing); Story 1.2b complete |
+| 2 | Conformal Calibration and Stage 2 LLM | **Complete** (157 tests passing) |
 | Post-Epic-2 | Production hardening (real scripts, config cleanup) | **Complete** |
-| 3 | Analyst UI and Demo | **Complete** (148 tests passing) |
+| 3 | Analyst UI and Demo | **Complete** (157 tests passing) |
 
 ---
 
@@ -91,9 +91,11 @@
 | 1.2b.3 | Write Story 1.2b tests | `tests/test_epic1_data.py` | TC-1.2b.1 through TC-1.2b.6 (see test plan). |
 
 **Definition of Done**:
-- `pytest tests/test_epic1_data.py::TestPerLabelSplit -v` passes with 0 failures
-- `pytest tests/test_epic1_data.py -v` still passes (existing Story 1.2 tests unaffected)
-- `scripts/train_stage1.py` uses `per_day_stratified_split` and logs split sizes per label class
+- `pytest tests/test_epic1_data.py::TestPerLabelSplit -v` passes with 0 failures ✓
+- `pytest tests/test_epic1_data.py -v` still passes (existing Story 1.2 tests unaffected) ✓
+- `scripts/train_stage1.py` uses `per_day_stratified_split` and logs split sizes per label class ✓
+
+**Status**: **Complete** -- model trained (PR-AUC=1.0000, recall=0.9998 on test split), full 10K clean pipeline run complete (recall=0.9929, volume_reduction=95.6%, 0 attacks silently missed). See `results/analysis_v1.1_10k.md`.
 
 **Commit message**: `story-1.2b: per-label stratified split, update training script to use new split`
 
