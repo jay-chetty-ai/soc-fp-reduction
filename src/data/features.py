@@ -129,6 +129,88 @@ def temporal_train_test_split(
     return train_df, test_df
 
 
+def per_day_stratified_split(
+    df: pd.DataFrame,
+    train_ratio: float = 0.70,
+    val_ratio: float = 0.15,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Split a CICIDS2017 DataFrame into train/val/test by stratifying on Label.
+
+    Groups rows by the specific attack class (the 'Label' column, not the
+    binary encoding). Within each group the rows are shuffled, then sliced at
+    the train_ratio and train_ratio+val_ratio boundaries. The remainder forms
+    the test split. Concatenating across groups gives three DataFrames that
+    each contain every attack family.
+
+    This approach eliminates the distribution shift caused by single-day temporal
+    hold-outs: CICIDS2017 places each attack type on exactly one day, so holding
+    out any single day hides those attack types from training.
+
+    Args:
+        df: DataFrame with a 'Label' column.
+        train_ratio: Fraction of each group to allocate to training (default 0.70).
+        val_ratio: Fraction of each group to allocate to validation (default 0.15).
+            The remainder goes to test. train_ratio + val_ratio must be < 1.
+        random_state: Random seed for reproducibility.
+
+    Returns:
+        (train_df, val_df, test_df) -- three DataFrames with reset indices and
+        no row overlap. Together they contain all rows of the input.
+
+    Raises:
+        KeyError: If 'Label' column is absent.
+        ValueError: If train_ratio + val_ratio >= 1.
+    """
+    if "Label" not in df.columns:
+        raise KeyError("'Label' column not found in DataFrame.")
+    if train_ratio + val_ratio >= 1.0:
+        raise ValueError(
+            f"train_ratio + val_ratio must be < 1.0, got {train_ratio + val_ratio}."
+        )
+
+    train_parts: list[pd.DataFrame] = []
+    val_parts: list[pd.DataFrame] = []
+    test_parts: list[pd.DataFrame] = []
+
+    rng = np.random.default_rng(random_state)
+
+    for label, group in df.groupby("Label", sort=True):
+        idx = rng.permutation(len(group))
+        shuffled = group.iloc[idx]
+        n = len(shuffled)
+        n_train = max(1, int(np.ceil(n * train_ratio)))
+        n_val = max(0, int(np.ceil(n * val_ratio)))
+        # Ensure we never exceed the group size
+        if n_train + n_val > n:
+            n_val = max(0, n - n_train)
+
+        train_parts.append(shuffled.iloc[:n_train])
+        val_parts.append(shuffled.iloc[n_train : n_train + n_val])
+        test_parts.append(shuffled.iloc[n_train + n_val :])
+        logger.info(
+            "per_day_stratified_split: label=%r total=%d train=%d val=%d test=%d",
+            label,
+            n,
+            len(train_parts[-1]),
+            len(val_parts[-1]),
+            len(test_parts[-1]),
+        )
+
+    train_df = pd.concat(train_parts, ignore_index=True)
+    val_df = pd.concat(val_parts, ignore_index=True)
+    test_df = pd.concat(test_parts, ignore_index=True)
+
+    logger.info(
+        "per_day_stratified_split totals: train=%d val=%d test=%d (total=%d).",
+        len(train_df),
+        len(val_df),
+        len(test_df),
+        len(train_df) + len(val_df) + len(test_df),
+    )
+    return train_df, val_df, test_df
+
+
 def get_feature_columns(df: pd.DataFrame) -> list[str]:
     """Return numeric feature column names, excluding non-feature columns.
 

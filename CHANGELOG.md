@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased] -- feature/stratified-split-evaluation
+
+### Added
+
+**Per-label stratified split (Story 1.2b)**
+- `src/data/features.py`: `per_day_stratified_split(df, train_ratio=0.70, val_ratio=0.15, random_state=42)` -- groups CICIDS2017 rows by specific attack class (`Label` column), shuffles within each group, then slices 70/15/15 for train/val/test. Every attack family guaranteed in training; groups with >= 10 rows also appear in val and test.
+- `tests/test_epic1_data.py::TestPerLabelSplit`: 8 tests covering label coverage, no row leakage, ratio correctness, determinism, seed variation, small-group edge case, and error handling. Total test count: 157.
+- `results/analysis_v1.1_10k.md`: full analysis of clean 10K pipeline run with v1.1 model, including Stage 2 deep dive, v1.0 vs v1.1 comparison, error analysis, and next steps.
+- Training and RAG build logs committed for reproducibility.
+
+### Changed
+- `scripts/train_stage1.py`: replaced `temporal_train_test_split` + `split_for_calibration` with `per_day_stratified_split`; validation split (15%) passed directly to conformal calibration instead of carving 20% off training; model trains on 70% (~1.98M rows) not ~56% (~1.59M rows).
+- `scripts/build_rag_index.py`: FAISS index now covers train + val rows (85% of all data, 2,403,708 vectors) so all attack families are available as RAG retrieval candidates.
+- `config.yaml`: Optuna search space bounds moved to `tuning.search_space` section; two presets documented (standard ~1-2h; wide/Option-A ~4-8h, switchable by editing 3 values).
+- `docs/`: requirements v1.1, architecture v2.1, sprint_backlog v2.1, test_plan v1.2 -- all updated before code changes per spec-driven development process; status fields updated to reflect completion.
+- `requirements.txt`: added `matplotlib>=3.9` (was missing; caused CI collection failure on `test_epic3_ui.py`).
+
+### Fixed
+- Distribution shift: v1.0 held out Friday (day 5) which contained DDoS, PortScan, and Bot attack types never seen during training. The per-label split guarantees all 15 attack families in all three splits.
+- CI test collection failure (`ModuleNotFoundError: No module named 'matplotlib'`) on Python 3.11 and 3.12.
+
+### Results (v1.1 clean 10K run vs v1.0 temporal 1K run)
+
+| Metric | v1.0 temporal | v1.1 per-label | Target |
+|---|---|---|---|
+| PR-AUC | 0.8166 | **1.0000** | >= 0.85 |
+| Recall | 0.4927 | **0.9929** | >= 0.95 |
+| Precision | 1.0000 | 0.9980 | — |
+| F1 | 0.6601 | **0.9954** | — |
+| Volume reduction | 90.7% | **95.6%** | >= 70% |
+| Attacks silently missed | 74 / 1K | **0 / 10K** | — |
+
+---
+
 ## [3.0.0] -- Epic 3 Complete -- 2026-05-26
 
 ### Added

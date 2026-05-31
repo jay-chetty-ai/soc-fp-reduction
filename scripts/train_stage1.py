@@ -18,10 +18,10 @@ from src.data.features import (
     clean_features,
     encode_labels,
     get_feature_columns,
-    temporal_train_test_split,
+    per_day_stratified_split,
 )
 from src.data.loader import load_dataset, validate_schema
-from src.models.classifier import evaluate, predict_proba, save_model, split_for_calibration, train, tune
+from src.models.classifier import evaluate, predict_proba, save_model, train, tune
 from src.models.conformal import fit_conformal, save_conformal, compute_coverage
 from src.models.explainer import build_explainer, explain_batch
 
@@ -32,12 +32,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _print_summary(results: dict, band_note: str = "") -> None:
-    width = 42
+def _print_summary(results: dict, split_label: str = "per-label stratified test") -> None:
+    width = 52
     print("\n" + "=" * width)
     print(" Stage 1 Evaluation Summary")
-    if band_note:
-        print(f" {band_note}")
+    print(f" Evaluation split: {split_label}")
     print("=" * width)
     print(f"  PR-AUC (target >= 0.85)  : {results['pr_auc']:.4f}")
     print(f"  Precision                : {results['precision']:.4f}")
@@ -69,27 +68,27 @@ def main() -> None:
     df = clean_features(df)
     df = add_temporal_features(df)
 
-    test_day = config["data"]["test_day"]
-    logger.info("Splitting train/test (temporal hold-out: day %d = test)...", test_day)
-    train_df, test_df = temporal_train_test_split(df, test_day=test_day)
+    logger.info("Splitting dataset using per-label stratified split (70/15/15)...")
+    train_df, val_df, test_df = per_day_stratified_split(
+        df, train_ratio=0.70, val_ratio=0.15, random_state=42
+    )
 
     feat_cols = get_feature_columns(train_df)
     X_train = train_df[feat_cols]
     y_train = encode_labels(train_df)
+    X_val = val_df[feat_cols]
+    y_val = encode_labels(val_df)
     X_test = test_df[feat_cols]
     y_test = encode_labels(test_df)
 
     logger.info(
-        "Dataset: train=%d, test=%d, features=%d, attack_rate_train=%.2f%%",
+        "Dataset: train=%d val=%d test=%d features=%d attack_rate_train=%.2f%%",
         len(X_train),
+        len(X_val),
         len(X_test),
         len(feat_cols),
         100.0 * y_train.mean(),
     )
-
-    logger.info("Splitting calibration holdout from training data...")
-    X_cv, y_cv, X_cal, y_cal = split_for_calibration(X_train, y_train, config)
-    logger.info("CV=%d rows, Calibration=%d rows.", len(X_cv), len(X_cal))
 
     if args.skip_tuning:
         logger.info("Skipping Optuna tuning; using default parameters.")
@@ -106,7 +105,7 @@ def main() -> None:
         study = None
     else:
         logger.info("Running Optuna hyperparameter tuning (n_trials=%d)...", config["tuning"]["n_trials"])
-        best_params, best_n_estimators, study = tune(X_cv, y_cv, config)
+        best_params, best_n_estimators, study = tune(X_train, y_train, config)
         logger.info(
             "Best Optuna trial: PR-AUC=%.4f  n_estimators=%d",
             study.best_value,
@@ -114,10 +113,10 @@ def main() -> None:
         )
         logger.info("Best params: %s", study.best_params)
 
-    logger.info("Training final model on full training set (n_estimators=%d)...", best_n_estimators)
+    logger.info("Training final model on 70%% training split (n_estimators=%d)...", best_n_estimators)
     model = train(X_train, y_train, config, best_params, best_n_estimators)
 
-    logger.info("Evaluating on day-5 hold-out...")
+    logger.info("Evaluating on per-label stratified test split...")
     results = evaluate(model, X_test, y_test)
     _print_summary(results)
 
@@ -125,10 +124,16 @@ def main() -> None:
     logger.info("Saving model to %s...", model_path)
     save_model(model, model_path)
 
-    logger.info("Fitting conformal predictor on calibration holdout (%d rows)...", len(X_cal))
-    conformal = fit_conformal(model, X_cal, y_cal, alpha=config["conformal"]["alpha"])
+    # Use the validation split for conformal calibration -- it is genuinely held out
+    # from training and covers all attack families (from per_day_stratified_split).
+    logger.info("Fitting conformal predictor on validation split (%d rows)...", len(X_val))
+    conformal = fit_conformal(model, X_val, y_val, alpha=config["conformal"]["alpha"])
     coverage = compute_coverage(conformal, X_test, y_test)
-    logger.info("Conformal empirical coverage on test set: %.4f (target >= %.2f)", coverage, 1 - config["conformal"]["alpha"])
+    logger.info(
+        "Conformal empirical coverage on test set: %.4f (target >= %.2f)",
+        coverage,
+        1 - config["conformal"]["alpha"],
+    )
 
     conformal_path = Path(config["conformal"]["artifact_path"])
     logger.info("Saving conformal predictor to %s...", conformal_path)

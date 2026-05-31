@@ -1,16 +1,20 @@
-"""Build and persist the FAISS RAG index from CICIDS2017 training data.
+"""Build and persist the FAISS RAG index from CICIDS2017 training and validation data.
 
 Usage:
     python scripts/build_rag_index.py [--config config.yaml] [--sample-size N]
 
-The index covers all rows from the temporal training split (days 1-4).
-With the full 2.8M-row dataset this embeds roughly 2.25M alerts; on an
+The index covers all rows from both the training split (70%) and the validation split
+(15%) of the per-label stratified split. Including the validation set ensures all attack
+families are available as retrieval candidates -- with a temporal day-5 hold-out, attack
+types that only appear on Friday (DDoS, PortScan, Bot) would be absent from the index.
+
+With the full 2.8M-row dataset this embeds roughly 2.45M alerts; on an
 RTX 2070 SUPER that takes ~15-20 minutes. Pass --sample-size to cap the
 number of rows embedded (useful for quick demos or CPU-only machines).
 
 Outputs (paths from config.yaml):
     rag.faiss_index_path    - FAISS IndexFlatIP binary
-    rag.training_df_path    - Parquet of the embedded training rows (for
+    rag.training_df_path    - Parquet of the indexed rows (for
                               label lookups during retrieval)
 
 The row order in training_df matches the FAISS index exactly: FAISS
@@ -34,7 +38,7 @@ from src.data.features import (
     add_temporal_features,
     clean_features,
     get_feature_columns,
-    temporal_train_test_split,
+    per_day_stratified_split,
 )
 from src.data.loader import load_dataset, validate_schema
 from src.llm.embeddings import alert_to_text, embed_alerts, load_embedding_model
@@ -48,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build FAISS RAG index from training data.")
+    parser = argparse.ArgumentParser(description="Build FAISS RAG index from training and validation data.")
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument(
         "--sample-size",
@@ -56,8 +60,8 @@ def main() -> None:
         default=None,
         metavar="N",
         help=(
-            "Embed at most N training rows (stratified by label). "
-            "Omit to embed the full training set."
+            "Embed at most N rows (stratified by label) from the train+val set. "
+            "Omit to embed all train+val rows."
         ),
     )
     args = parser.parse_args()
@@ -73,23 +77,30 @@ def main() -> None:
     df = clean_features(df)
     df = add_temporal_features(df)
 
-    test_day = config["data"]["test_day"]
-    logger.info("Applying temporal split (days 1-%d = training, day %d = test)...", test_day - 1, test_day)
-    train_df, _ = temporal_train_test_split(df, test_day=test_day)
-    logger.info("Training set: %d rows.", len(train_df))
+    logger.info("Applying per-label stratified split (70/15/15)...")
+    train_df, val_df, _ = per_day_stratified_split(df, train_ratio=0.70, val_ratio=0.15, random_state=42)
 
-    if args.sample_size is not None and args.sample_size < len(train_df):
+    # Combine train and val for the RAG index -- the test split is never indexed
+    index_df = pd.concat([train_df, val_df], ignore_index=True)
+    logger.info(
+        "Rows for FAISS index: train=%d + val=%d = %d total.",
+        len(train_df),
+        len(val_df),
+        len(index_df),
+    )
+
+    if args.sample_size is not None and args.sample_size < len(index_df):
         logger.info(
-            "Sampling %d rows (stratified by label) from %d training rows...",
+            "Sampling %d rows (stratified by label) from %d train+val rows...",
             args.sample_size,
-            len(train_df),
+            len(index_df),
         )
         from sklearn.model_selection import StratifiedShuffleSplit
-        y = (train_df["Label"] != "BENIGN").astype(int)
+        y = (index_df["Label"] != "BENIGN").astype(int)
         sss = StratifiedShuffleSplit(n_splits=1, test_size=args.sample_size, random_state=42)
-        _, keep_idx = next(sss.split(train_df, y))
-        train_df = train_df.iloc[keep_idx].reset_index(drop=True)
-        logger.info("Sampled %d rows.", len(train_df))
+        _, keep_idx = next(sss.split(index_df, y))
+        index_df = index_df.iloc[keep_idx].reset_index(drop=True)
+        logger.info("Sampled %d rows.", len(index_df))
 
     device = config["rag"].get("device", "auto")
     embedding_model_name = config["rag"]["embedding_model"]
@@ -97,8 +108,8 @@ def main() -> None:
     embedding_model = load_embedding_model(embedding_model_name, device=device)
 
     batch_size = config["rag"].get("embedding_batch_size", 64)
-    logger.info("Embedding %d training alerts (batch_size=%d)...", len(train_df), batch_size)
-    texts = [alert_to_text(row) for _, row in train_df.iterrows()]
+    logger.info("Embedding %d alerts (batch_size=%d)...", len(index_df), batch_size)
+    texts = [alert_to_text(row) for _, row in index_df.iterrows()]
     embeddings = embed_alerts(embedding_model, texts, batch_size=batch_size)
     logger.info("Embeddings shape: %s dtype=%s", embeddings.shape, embeddings.dtype)
 
@@ -112,15 +123,15 @@ def main() -> None:
 
     training_df_path = Path(config["rag"]["training_df_path"])
     training_df_path.parent.mkdir(parents=True, exist_ok=True)
-    train_df.reset_index(drop=True).to_parquet(training_df_path, index=False)
+    index_df.reset_index(drop=True).to_parquet(training_df_path, index=False)
     logger.info(
-        "Training DataFrame saved to %s (%d rows, %d columns).",
+        "Index DataFrame saved to %s (%d rows, %d columns).",
         training_df_path,
-        len(train_df),
-        len(train_df.columns),
+        len(index_df),
+        len(index_df.columns),
     )
 
-    dist = train_df["Label"].value_counts().to_dict()
+    dist = index_df["Label"].value_counts().to_dict()
     logger.info("Label distribution in index: %s", dist)
     logger.info("RAG index build complete.")
 

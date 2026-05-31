@@ -1,17 +1,17 @@
 # Sprint Backlog: SOC False Positive Reduction POC
 
-**Version**: 2.0  
-**Date**: 2026-05-25  
-**Status**: Approved and in execution
+**Version**: 2.1  
+**Date**: 2026-05-28  
+**Status**: Approved and complete -- v1.1 Story 1.2b done, PR open on feature/stratified-split-evaluation
 
 ## Status Summary
 
 | Epic | Description | Status |
 |------|-------------|--------|
-| 1 | Data Ingestion and Stage 1 Classifier | **Complete** (103 tests passing) |
-| 2 | Conformal Calibration and Stage 2 LLM | **Complete** (103 tests passing) |
+| 1 | Data Ingestion and Stage 1 Classifier | **Complete** (157 tests passing); Story 1.2b complete |
+| 2 | Conformal Calibration and Stage 2 LLM | **Complete** (157 tests passing) |
 | Post-Epic-2 | Production hardening (real scripts, config cleanup) | **Complete** |
-| 3 | Analyst UI and Demo | **Complete** (148 tests passing) |
+| 3 | Analyst UI and Demo | **Complete** (157 tests passing) |
 
 ---
 
@@ -71,6 +71,33 @@
 - `clean_features` on the full CICIDS2017 dataset logs the count of dropped rows
 
 **Commit message**: `story-1.2: feature engineering, temporal features, train/test split`
+
+---
+
+### Story 1.2b: Per-Label Stratified Split (v1.1)
+
+**Goal**: Add `per_day_stratified_split()` to `src/data/features.py` as the primary evaluation method. This eliminates the distribution shift caused by any single-day temporal hold-out (CICIDS2017 attack types are partitioned one per day, so a day-5 hold-out never sees DDoS, PortScan, or Bot during training).
+
+**Background**: The v1.0 temporal hold-out evaluated the model on attack types that appear only in the Friday data and never in the Monday-Thursday training data. This is a CICIDS2017 dataset artifact, not a model quality problem. The per-label split groups by specific attack class and allocates 70/15/15 of each group to train/val/test, guaranteeing every attack family appears in all three splits.
+
+**What stays**: `temporal_train_test_split` is not removed. Its tests continue to pass. Downstream code that currently reads `train_df, test_df = temporal_train_test_split(...)` in `scripts/train_stage1.py` is updated to use the new split.
+
+#### Tasks
+
+| # | Task | File(s) | Notes |
+|---|------|---------|-------|
+| 1.2b.1 | Add `per_day_stratified_split()` | `src/data/features.py` | Groups df by `Label` column. For each group, shuffles rows with `random_state`, then slices train/val/test at `[0:n_train]`, `[n_train:n_train+n_val]`, `[n_train+n_val:]` where sizes are `ceil(len(g)*train_ratio)` / `ceil(len(g)*val_ratio)` with remainder to test. Concatenates across all groups. Returns `(train_df, val_df, test_df)`. |
+| 1.2b.2 | Update `scripts/train_stage1.py` | `scripts/train_stage1.py` | Replace `temporal_train_test_split` call with `per_day_stratified_split`. Pass `val_df` to conformal calibration instead of carving 20% off training data. Pass combined `train_df + val_df` to `build_rag_index.py` for FAISS indexing. Log split sizes per attack class at INFO level. |
+| 1.2b.3 | Write Story 1.2b tests | `tests/test_epic1_data.py` | TC-1.2b.1 through TC-1.2b.6 (see test plan). |
+
+**Definition of Done**:
+- `pytest tests/test_epic1_data.py::TestPerLabelSplit -v` passes with 0 failures ✓
+- `pytest tests/test_epic1_data.py -v` still passes (existing Story 1.2 tests unaffected) ✓
+- `scripts/train_stage1.py` uses `per_day_stratified_split` and logs split sizes per label class ✓
+
+**Status**: **Complete** -- model trained (PR-AUC=1.0000, recall=0.9998 on test split), full 10K clean pipeline run complete (recall=0.9929, volume_reduction=95.6%, 0 attacks silently missed). See `results/analysis_v1.1_10k.md`.
+
+**Commit message**: `story-1.2b: per-label stratified split, update training script to use new split`
 
 ---
 

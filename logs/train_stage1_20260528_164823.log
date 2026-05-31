@@ -1,0 +1,39 @@
+2026-05-28 16:48:24,841 __main__ INFO Loading dataset...
+2026-05-28 16:48:24,841 src.data.loader INFO Loading Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv
+2026-05-28 16:48:28,845 src.data.loader INFO   225745 rows, 80 columns
+2026-05-28 16:48:28,845 src.data.loader INFO Loading Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv
+2026-05-28 16:48:33,650 src.data.loader INFO   286467 rows, 80 columns
+2026-05-28 16:48:33,650 src.data.loader INFO Loading Friday-WorkingHours-Morning.pcap_ISCX.csv
+2026-05-28 16:48:36,984 src.data.loader INFO   191033 rows, 80 columns
+2026-05-28 16:48:36,984 src.data.loader INFO Loading Monday-WorkingHours.pcap_ISCX.csv
+2026-05-28 16:48:46,362 src.data.loader INFO   529918 rows, 80 columns
+2026-05-28 16:48:46,362 src.data.loader INFO Loading Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv
+2026-05-28 16:48:51,300 src.data.loader INFO   288602 rows, 80 columns
+2026-05-28 16:48:51,300 src.data.loader INFO Loading Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv
+2026-05-28 16:48:54,203 src.data.loader INFO   170366 rows, 80 columns
+2026-05-28 16:48:54,203 src.data.loader INFO Loading Tuesday-WorkingHours.pcap_ISCX.csv
+2026-05-28 16:49:01,644 src.data.loader INFO   445909 rows, 80 columns
+2026-05-28 16:49:01,644 src.data.loader INFO Loading Wednesday-workingHours.pcap_ISCX.csv
+2026-05-28 16:49:13,653 src.data.loader INFO   692703 rows, 80 columns
+2026-05-28 16:49:14,198 src.data.loader INFO Total combined rows: 2830743, columns: 80
+2026-05-28 16:49:14,227 __main__ INFO Engineering features...
+2026-05-28 16:49:17,046 src.data.features WARNING clean_features: dropped 2867 rows with NaN/inf values.
+2026-05-28 16:49:19,526 __main__ INFO Splitting dataset using per-label stratified split (70/15/15)...
+2026-05-28 16:49:22,221 src.data.features INFO per_day_stratified_split: label='BENIGN' total=2271320 train=1589924 val=340698 test=340698
+2026-05-28 16:49:22,222 src.data.features INFO per_day_stratified_split: label='Bot' total=1956 train=1370 val=294 test=292
+2026-05-28 16:49:22,255 src.data.features INFO per_day_stratified_split: label='DDoS' total=128025 train=89618 val=19204 test=19203
+2026-05-28 16:49:22,258 src.data.features INFO per_day_stratified_split: label='DoS GoldenEye' total=10293 train=7206 val=1544 test=1543
+2026-05-28 16:49:22,322 src.data.features INFO per_day_stratified_split: label='DoS Hulk' total=230124 train=161087 val=34519 test=34518
+2026-05-28 16:49:22,323 src.data.features INFO per_day_stratified_split: label='DoS Slowhttptest' total=5499 train=3850 val=825 test=824
+2026-05-28 16:49:22,325 src.data.features INFO per_day_stratified_split: label='DoS slowloris' total=5796 train=4058 val=870 test=868
+2026-05-28 16:49:22,326 src.data.features INFO per_day_stratified_split: label='FTP-Patator' total=7935 train=5555 val=1191 test=1189
+2026-05-28 16:49:22,327 src.data.features INFO per_day_stratified_split: label='Heartbleed' total=11 train=8 val=2 test=1
+2026-05-28 16:49:22,327 src.data.features INFO per_day_stratified_split: label='Infiltration' total=36 train=26 val=6 test=4
+2026-05-28 16:49:22,369 src.data.features INFO per_day_stratified_split: label='PortScan' total=158804 train=111163 val=23821 test=23820
+2026-05-28 16:49:22,370 src.data.features INFO per_day_stratified_split: label='SSH-Patator' total=5897 train=4128 val=885 test=884
+2026-05-28 16:49:22,371 src.data.features INFO per_day_stratified_split: label='Web Attack � Brute Force' total=1507 train=1055 val=227 test=225
+2026-05-28 16:49:22,372 src.data.features INFO per_day_stratified_split: label='Web Attack � Sql Injection' total=21 train=15 val=4 test=2
+2026-05-28 16:49:22,372 src.data.features INFO per_day_stratified_split: label='Web Attack � XSS' total=652 train=457 val=98 test=97
+2026-05-28 16:49:22,799 src.data.features INFO per_day_stratified_split totals: train=1979520 val=424188 test=424168 (total=2827876).
+2026-05-28 16:49:22,899 __main__ INFO Dataset: train=1979520 val=424188 test=424168 features=80 attack_rate_train=19.68%
+2026-05-28 16:49:22,899 __main__ INFO Running Optuna hyperparameter tuning (n_trials=50)...

@@ -1,8 +1,8 @@
 # Architecture and Design: SOC False Positive Reduction POC
 
-**Version**: 2.0  
-**Date**: 2026-05-25  
-**Status**: Approved (Epics 1 and 2 complete; Epic 3 in progress)
+**Version**: 2.1  
+**Date**: 2026-05-28  
+**Status**: Approved -- v1.1 complete (Story 1.2b, per-label stratified split)
 
 ---
 
@@ -97,20 +97,28 @@ def create_fixture_subset(df: pd.DataFrame, n: int, random_state: int) -> pd.Dat
 
 ### 2.2 Feature Engineering (`src/data/features.py`)
 
-**Responsibility**: Clean raw features, create temporal features, produce train/test split.
+**Responsibility**: Clean raw features, create temporal features, produce train/validation/test splits.
 
 **Interface**:
 ```python
 def clean_features(df: pd.DataFrame) -> pd.DataFrame: ...
 def add_temporal_features(df: pd.DataFrame) -> pd.DataFrame: ...
 def temporal_train_test_split(df: pd.DataFrame, test_day: int) -> tuple[pd.DataFrame, pd.DataFrame]: ...
+def per_day_stratified_split(
+    df: pd.DataFrame,
+    train_ratio: float = 0.70,
+    val_ratio: float = 0.15,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: ...
 def get_feature_columns() -> list[str]: ...
 ```
 
 **Key behaviors**:
 - Replaces `np.inf` and `-np.inf` with `NaN`, then drops rows with any NaN in feature columns.
 - Parses `Timestamp` column (format: `DD/MM/YYYY HH:MM:SS`), extracts `hour_of_day` and `day_of_week`.
-- Temporal split uses day-5 as test day; rows without a parseable timestamp are dropped with a warning.
+- Temporal split (retained for baseline comparisons): day-5 = test, days 1-4 = train.
+- Per-label stratified split (primary evaluation): groups by the `Label` column (attack class, not binary), splits each group 70/15/15 by row-level random sampling. Returns `(train_df, val_df, test_df)`. Guarantees every attack family is present in all three splits.
+- The validation set from `per_day_stratified_split` is passed directly to conformal calibration, replacing the prior approach of carving 20% off the training set.
 - Binary label encoding: all non-BENIGN labels -> 1 (true positive), BENIGN -> 0 (false positive).
 
 ---
@@ -175,7 +183,7 @@ def no_improvement_callback(study: optuna.Study, trial: optuna.Trial) -> None:
             study.stop()
 ```
 
-*After tuning:* Retrain one final model on the full training split (all 4 days, excluding calibration split) using the best hyperparameter set. The final `n_estimators` is set to the mean of the best `n_estimators` across the 5 CV folds of the winning trial, rounded up to the nearest 10.
+*After tuning:* Retrain one final model on the 70% training split from `per_day_stratified_split` using the best hyperparameter set. The final `n_estimators` is set to the mean of the best `n_estimators` across the 5 CV folds of the winning trial, rounded up to the nearest 10. The 15% validation split is not used during training or tuning; it is reserved for conformal calibration.
 
 - XGBoost alternative trained with `scale_pos_weight = negative_count / positive_count`, same Optuna search space adapted for XGBoost parameter names (`max_depth`, `subsample`, `colsample_bytree`, `min_child_weight`).
 - PR-AUC computed via `sklearn.metrics.average_precision_score`.
@@ -219,6 +227,7 @@ def load_conformal(path: str, checksums_path: str | None) -> SplitConformalClass
 **Key behaviors**:
 - Uses `mapie.classification.SplitConformalClassifier` with `prefit=True` (MAPIE >= 1.4.0 API).
 - `lgb.Booster` is wrapped in `_BoosterWrapper` (provides `predict_proba`) before passing to `SplitConformalClassifier`.
+- The calibration input (`X_cal`, `y_cal`) is the 15% validation set from `per_day_stratified_split`. This set covers all attack families and is strictly separate from training data.
 - `fit_conformal` calls `clf.conformalize(X_cal, y_cal)` to calibrate the predictor.
 - `save_conformal` and `load_conformal` use SHA-256 integrity via `integrity.save_hash` / `verify_hash`, writing to the shared `models/checksums.json`.
 - `predict_bands` returns a Series with values `"auto_fp"`, `"uncertain"`, `"auto_tp"` for each row.
@@ -281,7 +290,7 @@ def retrieve_similar(index: faiss.IndexFlatIP, query: np.ndarray, k: int) -> tup
 - Uses `faiss.IndexFlatIP` (inner product; embeddings are L2-normalized so IP = cosine similarity).
 - Embeddings are L2-normalized before indexing and before querying.
 - `retrieve_similar` returns `(distances, indices)` where distances are cosine similarity scores in [0, 1].
-- Index holds one entry per training set alert; `indices` map back to the training DataFrame row.
+- Index holds one entry per alert in the combined train + validation set. Including the validation set ensures all attack families are available as retrieval candidates. `indices` map back to the combined DataFrame row.
 
 ---
 

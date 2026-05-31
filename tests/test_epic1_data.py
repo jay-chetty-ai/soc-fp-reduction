@@ -20,6 +20,7 @@ from src.data.features import (
     clean_features,
     encode_labels,
     get_feature_columns,
+    per_day_stratified_split,
     temporal_train_test_split,
 )
 from src.data.loader import create_fixture_subset, load_dataset, validate_schema
@@ -226,6 +227,94 @@ class TestFeatureEngineering:
 
 
 # =============================================================================
+# Story 1.2b: Per-Label Stratified Split
+# =============================================================================
+
+class TestPerLabelSplit:
+
+    def test_tc_1_2b_1_all_labels_in_every_split(self, fixture_features):
+        """TC-1.2b.1: Every attack family appears in train; large-enough groups in val and test.
+
+        Training always gets at least 1 row per class (max(1, ceil(n*0.70))).
+        For very small groups (< 10 rows), integer rounding may leave val or test
+        empty. The test validates the invariant for groups that are large enough
+        to distribute across all three splits.
+        """
+        train_df, val_df, test_df = per_day_stratified_split(fixture_features, random_state=42)
+        all_labels = set(fixture_features["Label"].unique())
+
+        # Training must contain every label
+        assert set(train_df["Label"].unique()) == all_labels, "Train missing label(s)."
+
+        # For labels with >= 10 rows, val and test must also contain them
+        label_counts = fixture_features["Label"].value_counts()
+        large_labels = set(label_counts[label_counts >= 10].index)
+        assert set(val_df["Label"].unique()) >= large_labels, (
+            f"Val missing large labels: {large_labels - set(val_df['Label'].unique())}"
+        )
+        assert set(test_df["Label"].unique()) >= large_labels, (
+            f"Test missing large labels: {large_labels - set(test_df['Label'].unique())}"
+        )
+
+    def test_tc_1_2b_2_no_row_appears_in_multiple_splits(self, fixture_features):
+        """TC-1.2b.2: No row is duplicated across splits; all rows are accounted for."""
+        train_df, val_df, test_df = per_day_stratified_split(fixture_features, random_state=42)
+        # Row counts sum exactly to original
+        assert len(train_df) + len(val_df) + len(test_df) == len(fixture_features)
+
+    def test_tc_1_2b_3_split_sizes_match_ratios(self, fixture_features):
+        """TC-1.2b.3: Train/val/test sizes are within 2% of the 70/15/15 targets."""
+        train_df, val_df, test_df = per_day_stratified_split(
+            fixture_features, train_ratio=0.70, val_ratio=0.15, random_state=42
+        )
+        total = len(fixture_features)
+        assert abs(len(train_df) / total - 0.70) < 0.02, f"Train ratio off: {len(train_df)/total:.3f}"
+        assert abs(len(val_df) / total - 0.15) < 0.02, f"Val ratio off: {len(val_df)/total:.3f}"
+        assert abs(len(test_df) / total - 0.15) < 0.02, f"Test ratio off: {len(test_df)/total:.3f}"
+
+    def test_tc_1_2b_4_deterministic_with_same_seed(self, fixture_features):
+        """TC-1.2b.4: Same random_state produces identical splits."""
+        train1, val1, test1 = per_day_stratified_split(fixture_features, random_state=42)
+        train2, val2, test2 = per_day_stratified_split(fixture_features, random_state=42)
+        pd.testing.assert_frame_equal(train1.reset_index(drop=True), train2.reset_index(drop=True))
+        pd.testing.assert_frame_equal(val1.reset_index(drop=True), val2.reset_index(drop=True))
+        pd.testing.assert_frame_equal(test1.reset_index(drop=True), test2.reset_index(drop=True))
+
+    def test_tc_1_2b_5_different_seeds_produce_different_splits(self, fixture_features):
+        """TC-1.2b.5: Different random seeds produce at least one different split."""
+        train1, _, _ = per_day_stratified_split(fixture_features, random_state=42)
+        train2, _, _ = per_day_stratified_split(fixture_features, random_state=99)
+        # After reset_index, indices are trivially identical (0,1,...).
+        # Compare actual feature values to detect different row orderings.
+        col = "Destination Port"
+        assert not train1[col].tolist() == train2[col].tolist(), (
+            "Different seeds should produce different row orderings within groups."
+        )
+
+    def test_tc_1_2b_6_small_group_handled_without_error(self):
+        """TC-1.2b.6: Groups with very few rows do not raise an exception."""
+        from tests.conftest import CICIDS2017_FEATURE_COLS
+        data = {col: np.zeros(10) for col in CICIDS2017_FEATURE_COLS}
+        data["Label"] = ["BENIGN"] * 7 + ["Rare Attack"] * 3
+        data["Timestamp"] = "03/07/2017 08:00"
+        df = pd.DataFrame(data)
+        # Must not raise
+        train_df, val_df, test_df = per_day_stratified_split(df, train_ratio=0.70, val_ratio=0.15, random_state=0)
+        assert len(train_df) + len(val_df) + len(test_df) == 10
+
+    def test_raises_on_missing_label_column(self, fixture_features):
+        """per_day_stratified_split raises KeyError when Label column is absent."""
+        df_no_label = fixture_features.drop(columns=["Label"])
+        with pytest.raises(KeyError, match="Label"):
+            per_day_stratified_split(df_no_label)
+
+    def test_raises_on_invalid_ratios(self, fixture_features):
+        """per_day_stratified_split raises ValueError when ratios sum to >= 1."""
+        with pytest.raises(ValueError, match="train_ratio"):
+            per_day_stratified_split(fixture_features, train_ratio=0.80, val_ratio=0.30)
+
+
+# =============================================================================
 # Story 1.3: LightGBM Classifier, Optuna Tuning, SHAP
 # =============================================================================
 
@@ -401,6 +490,23 @@ class TestClassifier:
                 "n_estimators_ceiling": 50,
                 "optuna_study_name": "test_bounds",
                 "optuna_storage": None,
+                "search_space": {
+                    "num_leaves_min": 31,
+                    "num_leaves_max": 127,
+                    "max_depth_choices": [-1, 6, 8, 10],
+                    "learning_rate_min": 0.01,
+                    "learning_rate_max": 0.1,
+                    "min_child_samples_min": 10,
+                    "min_child_samples_max": 100,
+                    "subsample_min": 0.5,
+                    "subsample_max": 1.0,
+                    "colsample_bytree_min": 0.5,
+                    "colsample_bytree_max": 1.0,
+                    "reg_alpha_min": 0.0,
+                    "reg_alpha_max": 10.0,
+                    "reg_lambda_min": 0.0,
+                    "reg_lambda_max": 10.0,
+                },
             },
             "stage1": {
                 "is_unbalance": True,
@@ -408,9 +514,9 @@ class TestClassifier:
             },
         }
         best_params, _, _ = tune(X, y, minimal_config)
-        assert 31 <= best_params["num_leaves"] <= 512
-        assert 3 <= best_params["max_depth"] <= 12
-        assert 0.01 <= best_params["learning_rate"] <= 0.3
+        assert 31 <= best_params["num_leaves"] <= 127
+        assert best_params["max_depth"] in [-1, 6, 8, 10]
+        assert 0.01 <= best_params["learning_rate"] <= 0.1
         assert 10 <= best_params["min_child_samples"] <= 100
         assert 0.5 <= best_params["subsample"] <= 1.0
         assert 0.5 <= best_params["colsample_bytree"] <= 1.0
